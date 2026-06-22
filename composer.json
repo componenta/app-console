@@ -1,0 +1,42 @@
+{
+    "name": "componenta/app-console",
+    "description": "Console runtime integration for Componenta applications",
+    "type": "library",
+    "license": "MIT",
+    "require": {
+        "php": "^8.4",
+        "componenta/app": "^1.0",
+        "componenta/arrayable": "^1.0",
+        "componenta/class-finder": "^1.0",
+        "componenta/config": "^1.0",
+        "componenta/di": "^1.0",
+        "componenta/error-handler": "^1.0",
+        "componenta/path-resolver": "^1.0",
+        "componenta/reflection": "^1.0",
+        "componenta/scope": "^1.0",
+        "componenta/var-export": "^1.0",
+        "psr/container": "^2.0",
+        "psr/log": "^3.0",
+        "symfony/console": "^7.4 || ^8.0",
+        "symfony/event-dispatcher": "^7.4 || ^8.0",
+        "symfony/lock": "^7.4 || ^8.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Componenta\\App\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Componenta\\App\\Console\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "componenta": {
+            "config-providers": [
+                "Componenta\\App\\Console\\ConfigProvider"
+            ]
+        }
+    },
+    "minimum-stability": "stable"
+}
