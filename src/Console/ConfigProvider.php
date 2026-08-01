@@ -10,6 +10,8 @@ use Componenta\App\ConfigKey as AppConfigKey;
 use Componenta\App\Console\Command\BuildCommand;
 use Componenta\App\Console\Command\CacheClearCommand;
 use Componenta\App\Console\Command\PreloadCommand;
+use Componenta\App\Console\Compile\ConsoleCommandCompiler;
+use Componenta\App\Console\Compile\ConsoleCommandMapContributor;
 use Componenta\Config\ConfigProvider as BaseConfigProvider;
 
 final class ConfigProvider extends BaseConfigProvider
@@ -30,6 +32,9 @@ final class ConfigProvider extends BaseConfigProvider
                 BuildCommand::class,
                 CacheClearCommand::class,
                 PreloadCommand::class,
+            ],
+            AppConfigKey::COMPILE_CACHE_CONTRIBUTORS => [
+                ConsoleCommandMapContributor::class,
             ],
         ];
     }
@@ -52,6 +57,14 @@ final class ConfigProvider extends BaseConfigProvider
             ConsoleBootTargetAdapter::class,
             ConsoleCommandRegistry::class,
             PreloadCommand::class,
+        ];
+    }
+
+    protected function getInvokables(): array
+    {
+        return [
+            ConsoleCommandCompiler::class,
+            ConsoleCommandMapContributor::class,
         ];
     }
 

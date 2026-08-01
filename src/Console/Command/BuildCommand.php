@@ -246,11 +246,12 @@ final class BuildCommand extends Command
                 continue;
             }
 
+            $content = $this->phpReturn($value);
             $file = $cache->build(sprintf(
                 'config-shard-%s.php',
-                substr(hash('sha256', (string) $key), 0, 16),
+                substr(hash('sha256', $content), 0, 16),
             ));
-            AtomicFile::replace($file, $this->phpReturn($value), sprintf('config shard "%s"', $key));
+            AtomicFile::replace($file, $content, sprintf('config shard "%s"', $key));
             $config[$key] = new FileValue(basename($file));
         }
 

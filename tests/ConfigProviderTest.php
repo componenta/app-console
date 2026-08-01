@@ -8,6 +8,7 @@ use Componenta\App\ConfigKey as AppConfigKey;
 use Componenta\App\Console\Command\BuildCommand;
 use Componenta\App\Console\Command\CacheClearCommand;
 use Componenta\App\Console\Command\PreloadCommand;
+use Componenta\App\Console\Compile\ConsoleCommandMapContributor;
 use Componenta\App\Console\ConfigKey as ConsoleConfigKey;
 use Componenta\App\Console\ConfigProvider;
 use Componenta\App\Console\ConsoleAppAdapter;
@@ -34,5 +35,12 @@ describe('console app config provider', function (): void {
             CacheClearCommand::class,
             PreloadCommand::class,
         );
+    });
+
+    it('registers the production AsCommand compile contributor', function (): void {
+        $config = (new ConfigProvider())();
+
+        expect($config[AppConfigKey::COMPILE_CACHE_CONTRIBUTORS])
+            ->toContain(ConsoleCommandMapContributor::class);
     });
 });
