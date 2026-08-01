@@ -12,15 +12,12 @@ use Componenta\App\Discovery\Compile\DiPlanBuilder;
 use Componenta\App\Discovery\Compile\DiscoveryCompiler;
 use Componenta\App\Discovery\ListenerCompiler;
 use Componenta\App\Discovery\ListenerRestorer;
-use Componenta\ClassFinder\Attribute\DevOnly;
 use Componenta\ClassFinder\ConfigKey as ClassFinderConfigKey;
 use Componenta\ClassFinder\ClassIteratorInterface;
 use Componenta\ClassFinder\ClassListenerProviderInterface;
 use Componenta\ClassFinder\Compile\ConfigKey as ClassFinderCompileConfigKey;
 use Componenta\Config\Config;
-use Componenta\Config\FileValue;
 use Componenta\Config\ConfigLoader;
-use Componenta\DI\Compile\IndexedPlanCacheGenerator;
 use Componenta\DI\Compile\PlanCompiler;
 use Componenta\DI\Compile\PlanDispatcher;
 use Componenta\DI\ConfigKey as DiConfigKey;
@@ -28,7 +25,6 @@ use Componenta\DI\ContainerBuilder;
 use Componenta\Stdlib\PathResolverInterface;
 use Componenta\VarExport\Export;
 use Psr\Container\ContainerInterface;
-use ReflectionClass;
 use RuntimeException;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -43,17 +39,11 @@ use function Componenta\Config\config_merge;
 )]
 final class BuildCommand extends Command
 {
-    private const int CONFIG_SHARD_MIN_BYTES = 16_384;
-
-    private readonly IndexedPlanCacheGenerator $planCacheGenerator;
-
     public function __construct(
         private readonly Config $config,
         private readonly PathResolverInterface $paths,
         private readonly ContainerInterface $container,
-        ?IndexedPlanCacheGenerator $planCacheGenerator = null,
     ) {
-        $this->planCacheGenerator = $planCacheGenerator ?? new IndexedPlanCacheGenerator();
         parent::__construct();
     }
 
@@ -61,31 +51,19 @@ final class BuildCommand extends Command
     {
         $io = new SymfonyStyle($input, $output);
 
-        if (getenv('COMPONENTA_BUILD') !== '1'
-            && $this->config->environment?->match('APP_ENV', 'development', false) !== true) {
-            throw new RuntimeException(
-                'app:build requires APP_ENV=development or the process-local COMPONENTA_BUILD=1 flag.',
-            );
+        if ($this->config->environment?->match('APP_ENV', 'development', false) !== true) {
+            throw new RuntimeException('app:build must run with APP_ENV=development so it can build from source configuration and discovery metadata.');
         }
 
         $cache = CacheLayout::fromConfig($this->config, $this->paths);
         $config = config_merge($this->config->toArray(), $this->compileDiscoveryDelta($cache));
         $dependencies = $config[DiConfigKey::DEPENDENCIES] ?? [];
 
-        if (($config[ConfigKey::RUNTIME_DISCOVERY] ?? true) === false) {
-            unset($config[ListenerRestorer::CACHE_KEY]);
-        }
-
         if (!is_array($dependencies)) {
             throw new RuntimeException('DI dependencies config must be an array.');
         }
 
-        if (isset($dependencies[PlanCompiler::FILE_CONFIG_KEY])) {
-            unset($dependencies[PlanCompiler::CONFIG_KEY]);
-        }
-
         unset($config[DiConfigKey::DEPENDENCIES]);
-        $config = $this->shardConfig($config, $cache);
 
         ConfigLoader::export(new Config($config, $this->config->environment), $cache->config);
         AtomicFile::replace($cache->container, $this->phpReturn([
@@ -96,7 +74,6 @@ final class BuildCommand extends Command
         $io->success([
             sprintf('Config cache: %s', $cache->config),
             sprintf('Container cache: %s', $cache->container),
-            sprintf('DI plan cache: %s', $cache->diPlans),
         ]);
 
         return Command::SUCCESS;
@@ -124,20 +101,14 @@ final class BuildCommand extends Command
         $diPlanBuilder = $this->container->get(DiPlanBuilder::class);
         $diPlans = $diPlanBuilder->compile($discoveryCache['classes']);
         $dispatcherMap = $diPlanBuilder->dispatcherMap();
-        $this->planCacheGenerator->generate($diPlans, $cache->diPlans);
 
-        $runtimeDiscovery = $this->requiresRuntimeDiscovery();
         $delta = [
-            ConfigKey::RUNTIME_DISCOVERY => $runtimeDiscovery,
+            ListenerRestorer::CACHE_KEY => $discoveryCache,
             DiConfigKey::DEPENDENCIES => [
-                PlanCompiler::FILE_CONFIG_KEY => basename($cache->diPlans),
+                PlanCompiler::CONFIG_KEY => $diPlans,
                 PlanDispatcher::CONFIG_KEY => $dispatcherMap,
             ],
         ];
-
-        if ($runtimeDiscovery) {
-            $delta[ListenerRestorer::CACHE_KEY] = $discoveryCache;
-        }
 
         if ($this->container->has(ClassListenerProviderInterface::class)
             && $this->container->has(DiscoveryCompiler::class)
@@ -201,67 +172,16 @@ final class BuildCommand extends Command
                 ));
             }
 
-            $contributions[] = $contributor->compile(array_values($classes));
+            $contributions[] = $contributor->compile($classes);
         }
 
         return $contributions;
     }
 
-    private function requiresRuntimeDiscovery(): bool
-    {
-        if (!$this->container->has(ClassListenerProviderInterface::class)) {
-            return true;
-        }
-
-        /** @var ClassListenerProviderInterface $provider */
-        $provider = $this->container->get(ClassListenerProviderInterface::class);
-
-        foreach ($provider->getClassListeners() as $listener) {
-            if ((new ReflectionClass($listener))->getAttributes(DevOnly::class) === []) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
     /**
-     * @param array<string, mixed> $config
-     * @return array<string, mixed>
+     * @param array<string, mixed> $data
      */
-    private function shardConfig(array $config, CacheLayout $cache): array
-    {
-        foreach ($config as $key => $value) {
-            if (!is_array($value)) {
-                continue;
-            }
-
-            try {
-                $size = strlen(serialize($value));
-            } catch (\Throwable) {
-                continue;
-            }
-
-            if ($size < self::CONFIG_SHARD_MIN_BYTES) {
-                continue;
-            }
-
-            $content = $this->phpReturn($value);
-            $file = $cache->build(sprintf(
-                'config-shard-%s.php',
-                substr(hash('sha256', $content), 0, 16),
-            ));
-            AtomicFile::replace($file, $content, sprintf('config shard "%s"', $key));
-            $config[$key] = new FileValue(basename($file));
-        }
-
-        return $config;
-    }
-
-    /**
-     * @param mixed $data
-     */
-    private function phpReturn(mixed $data): string
+    private function phpReturn(array $data): string
     {
         return "<?php\n\ndeclare(strict_types=1);\n\nreturn " . Export::pretty($data) . ";\n";
     }
