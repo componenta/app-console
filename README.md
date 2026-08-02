@@ -22,7 +22,7 @@ The package requires PHP `^8.4`, `componenta/app`, `componenta/class-finder`, `c
 
 | Service or config key | Purpose |
 |---|---|
-| `ConsoleAppAdapter` | Creates a console application for `Scope::CLI`. |
+| `ConfigKey::APP_BY_SCOPE[Scope::CLI->value]` | Resolves the CLI scope directly to `App::class`. |
 | `ConsoleBootTargetAdapter` | Adapts the console application to a boot target. |
 | `ConsoleBootloader` | Boots console commands into the target registry. |
 | `ConsoleCommandRegistryInterface` | Alias to `ConsoleCommandRegistry`. |
@@ -69,7 +69,7 @@ The package registers these commands:
 
 ## Related Packages
 
-- [`componenta/app`](https://github.com/componenta/app/blob/main/README.md) explains scopes, adapters, and bootloaders.
+- [`componenta/app`](https://github.com/componenta/app/blob/main/README.md) explains scopes, application resolution, and bootloaders.
 - [`componenta/error-handler`](https://github.com/componenta/error-handler/blob/main/README.md) provides the error handling contracts used by console listeners.
 - [`componenta/cycle-app`](https://github.com/componenta/cycle-app/blob/main/README.md) contributes `db:*` commands.
 - [`componenta/router-app`](https://github.com/componenta/router-app/blob/main/README.md) contributes `router:list`.
