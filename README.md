@@ -56,7 +56,7 @@ The package registers these commands:
 
 | Command | Purpose |
 |---|---|
-| `app:build` | Writes build cache files for configuration and the DI container. Must run with `APP_ENV=development` so it builds from source configuration instead of existing production cache. |
+| `app:build` | Writes config and container caches and compiles a generated DI entry resolver for discovered concrete classes. Its build-scoped fingerprint validates the resolver/cache pair in production without hashing source files on every bootstrap. Must run with `APP_ENV=development`. |
 | `app:preload` | Generates `preload.php` from existing build cache artifacts. |
 | `app:cache:clear` | Clears build, development, and runtime cache directories. Use `--build`, `--dev`, or `--runtime` to limit the scope. |
 

@@ -49,17 +49,6 @@ final class ConfigProvider extends BaseConfigProvider
         ];
     }
 
-    protected function getAutowires(): array
-    {
-        return [
-            BuildCommand::class,
-            CacheClearCommand::class,
-            ConsoleBootloader::class,
-            ConsoleBootTargetAdapter::class,
-            ConsoleCommandRegistry::class,
-            PreloadCommand::class,
-        ];
-    }
 
     protected function getInvokables(): array
     {

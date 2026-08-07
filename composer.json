@@ -5,11 +5,11 @@
     "license": "MIT",
     "require": {
         "php": "^8.4",
-        "componenta/app": "dev-dev",
+        "componenta/app": "^2.0@dev",
         "componenta/arrayable": "^1.0",
         "componenta/class-finder": "^1.0",
         "componenta/config": "^1.0",
-        "componenta/di": "^1.0",
+        "componenta/di": "^2.0@dev",
         "componenta/error-handler": "^1.0",
         "componenta/path-resolver": "^1.0",
         "componenta/reflection": "^1.0",
@@ -20,6 +20,9 @@
         "symfony/console": "^7.4 || ^8.0",
         "symfony/event-dispatcher": "^7.4 || ^8.0",
         "symfony/lock": "^7.4 || ^8.0"
+    },
+    "require-dev": {
+        "pestphp/pest": "^4.0"
     },
     "autoload": {
         "psr-4": {
@@ -32,14 +35,20 @@
         }
     },
     "extra": {
-        "branch-alias": {
-            "dev-dev": "1.0.x-dev"
-        },
         "componenta": {
             "config-providers": [
                 "Componenta\\App\\Console\\ConfigProvider"
             ]
         }
+    },
+    "scripts": {
+        "test": "@php vendor/bin/pest"
+    },
+    "config": {
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        },
+        "sort-packages": true
     },
     "minimum-stability": "stable"
 }

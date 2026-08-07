@@ -56,7 +56,7 @@ return [
 
 | Команда | Назначение |
 |---|---|
-| `app:build` | Записывает сборочные файлы кеша конфигурации и DI-контейнера. Должна запускаться с `APP_ENV=development`, чтобы сборка шла из исходной конфигурации, а не из существующего production-cache. |
+| `app:build` | Записывает кеши конфигурации и контейнера и компилирует generated DI entry resolver для найденных concrete-классов. Build fingerprint проверяет согласованность resolver/cache в production без хеширования исходников при каждом bootstrap. Команда должна запускаться с `APP_ENV=development`. |
 | `app:preload` | Генерирует `preload.php` из существующих сборочных артефактов. |
 | `app:cache:clear` | Очищает каталоги сборочного, dev- и runtime-кеша. Опции `--build`, `--dev`, `--runtime` ограничивают область очистки. |
 
