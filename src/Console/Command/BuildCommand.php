@@ -158,9 +158,9 @@ final class BuildCommand extends Command
         }
 
         $discoveryCache = $this->container->get(ListenerCompiler::class)->compile($iterator);
-        $delta = [
-            ListenerRestorer::CACHE_KEY => $discoveryCache,
-        ];
+        $delta = $discoveryCache['classes'] === [] && $discoveryCache['targets'] === []
+            ? []
+            : [ListenerRestorer::CACHE_KEY => $discoveryCache];
 
         if ($this->container->has(ClassListenerProviderInterface::class)
             && $this->container->has(DiscoveryCompiler::class)

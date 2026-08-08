@@ -15,8 +15,10 @@ final readonly class ConsoleCommandMapContributor implements CompileCacheContrib
      */
     public function compile(array $classes): array
     {
-        return [
-            ConfigKey::COMMANDS => (new ConsoleCommandCompiler())->compile($classes),
-        ];
+        $commands = (new ConsoleCommandCompiler())->compile($classes);
+
+        return $commands === []
+            ? []
+            : [ConfigKey::COMMANDS => $commands];
     }
 }

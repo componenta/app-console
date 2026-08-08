@@ -9,6 +9,7 @@ use Componenta\App\ContainerCacheMode;
 use Componenta\App\ContainerFactory;
 use Componenta\App\ContainerFactoryOptions;
 use Componenta\App\Discovery\ListenerCompiler;
+use Componenta\App\Discovery\ListenerRestorer;
 use Componenta\ClassFinder\ClassIterator;
 use Componenta\ClassFinder\ClassIteratorInterface;
 use Componenta\ClassFinder\ClassListenerProviderInterface;
@@ -154,6 +155,47 @@ it('builds and activates a generated DI resolver from discovered concrete classe
         expect($container->get(BuildCommandGeneratedTarget::class))
             ->toBeInstanceOf(BuildCommandGeneratedTarget::class)
             ->dependency->toBeInstanceOf(BuildCommandGeneratedDependency::class);
+    } finally {
+        $cache = CacheLayout::fromConfig($config, $paths);
+
+        foreach ([$cache->containerResolver, $cache->container, $cache->container . '.lock', $cache->config] as $file) {
+            if (is_file($file)) {
+                unlink($file);
+            }
+        }
+
+        foreach ([$cache->buildDir, dirname($cache->buildDir), dirname(dirname($cache->buildDir)), $root] as $directory) {
+            if (is_dir($directory)) {
+                rmdir($directory);
+            }
+        }
+    }
+});
+
+it('omits empty discovery metadata from the generated config cache', function (): void {
+    $root = str_replace(DIRECTORY_SEPARATOR, '/', sys_get_temp_dir())
+        . '/componenta_app_console_empty_build_'
+        . bin2hex(random_bytes(4));
+    $paths = new BuildCommandTestPathResolver($root);
+    $iterator = new ClassIterator([]);
+    $config = new Config([], new Environment(['APP_ENV' => 'development']));
+    $command = new BuildCommand(
+        $config,
+        $paths,
+        new BuildCommandTestContainer([
+            ClassIteratorInterface::class => $iterator,
+            ListenerCompiler::class => new ListenerCompiler(new BuildCommandTestListenerProvider()),
+        ]),
+    );
+
+    try {
+        $status = (new CommandTester($command))->execute([]);
+        $cache = CacheLayout::fromConfig($config, $paths);
+        $compiledConfig = ConfigLoader::loadFromFile($cache->config)->toArray();
+
+        expect($status)->toBe(0)
+            ->and(is_file($cache->containerResolver))->toBeFalse()
+            ->and($compiledConfig)->not->toHaveKey(ListenerRestorer::CACHE_KEY);
     } finally {
         $cache = CacheLayout::fromConfig($config, $paths);
 

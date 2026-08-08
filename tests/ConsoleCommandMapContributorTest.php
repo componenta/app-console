@@ -30,3 +30,7 @@ it('compiles AsCommand classes into production console configuration', function 
         ],
     ]);
 });
+
+it('omits the console command section when no commands are discovered', function (): void {
+    expect((new ConsoleCommandMapContributor())->compile([]))->toBe([]);
+});
