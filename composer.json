@@ -5,7 +5,7 @@
     "license": "MIT",
     "require": {
         "php": "^8.4",
-        "componenta/app": "^2.0",
+        "componenta/app": "^1.0",
         "componenta/arrayable": "^1.0",
         "componenta/class-finder": "^1.0",
         "componenta/config": "^1.0",
