@@ -22,7 +22,7 @@ The package requires PHP `^8.4`, `componenta/app`, `componenta/class-finder`, `c
 
 | Service or config key | Purpose |
 |---|---|
-| `ConsoleAppAdapter` | Creates a console application for `Scope::CLI`. |
+| `ConfigKey::APP_BY_SCOPE[Scope::CLI->value]` | Resolves the CLI scope directly to `App::class`. |
 | `ConsoleBootTargetAdapter` | Adapts the console application to a boot target. |
 | `ConsoleBootloader` | Boots console commands into the target registry. |
 | `ConsoleCommandRegistryInterface` | Alias to `ConsoleCommandRegistry`. |
@@ -56,7 +56,7 @@ The package registers these commands:
 
 | Command | Purpose |
 |---|---|
-| `app:build` | Writes build cache files for configuration and the DI container. Must run with `APP_ENV=development` so it builds from source configuration instead of existing production cache. |
+| `app:build` | Writes config and container caches and compiles a generated DI entry resolver for discovered concrete classes. Its build-scoped fingerprint validates the resolver/cache pair in production without hashing source files on every bootstrap. Must run with `APP_ENV=development`. |
 | `app:preload` | Generates `preload.php` from existing build cache artifacts. |
 | `app:cache:clear` | Clears build, development, and runtime cache directories. Use `--build`, `--dev`, or `--runtime` to limit the scope. |
 
@@ -69,7 +69,7 @@ The package registers these commands:
 
 ## Related Packages
 
-- [`componenta/app`](https://github.com/componenta/app/blob/main/README.md) explains scopes, adapters, and bootloaders.
+- [`componenta/app`](https://github.com/componenta/app/blob/main/README.md) explains scopes, application resolution, and bootloaders.
 - [`componenta/error-handler`](https://github.com/componenta/error-handler/blob/main/README.md) provides the error handling contracts used by console listeners.
 - [`componenta/cycle-app`](https://github.com/componenta/cycle-app/blob/main/README.md) contributes `db:*` commands.
 - [`componenta/router-app`](https://github.com/componenta/router-app/blob/main/README.md) contributes `router:list`.

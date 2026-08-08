@@ -34,9 +34,8 @@ final class PreloadCommand extends Command
         $files = [
             $cache->config,
             $cache->container,
-            $cache->containerFactory,
+            $cache->containerResolver,
             $cache->routes,
-            $cache->diPlans,
             $cache->discovery,
             $cache->policies,
             $cache->interceptors,

@@ -22,7 +22,7 @@ composer require componenta/app-console
 
 | Сервис или ключ конфигурации | Назначение |
 |---|---|
-| `ConsoleAppAdapter` | Создает консольное приложение для `Scope::CLI`. |
+| `ConfigKey::APP_BY_SCOPE[Scope::CLI->value]` | Связывает область `Scope::CLI` непосредственно с `App::class`. |
 | `ConsoleBootTargetAdapter` | Адаптирует консольное приложение к целевому объекту загрузки. |
 | `ConsoleBootloader` | Загружает команды в реестр Symfony Console. |
 | `ConsoleCommandRegistryInterface` | Псевдоним на `ConsoleCommandRegistry`. |
@@ -56,7 +56,7 @@ return [
 
 | Команда | Назначение |
 |---|---|
-| `app:build` | Записывает сборочные файлы кеша конфигурации и DI-контейнера. Должна запускаться с `APP_ENV=development`, чтобы сборка шла из исходной конфигурации, а не из существующего production-cache. |
+| `app:build` | Записывает кеши конфигурации и контейнера и компилирует generated DI entry resolver для найденных concrete-классов. Build fingerprint проверяет согласованность resolver/cache в production без хеширования исходников при каждом bootstrap. Команда должна запускаться с `APP_ENV=development`. |
 | `app:preload` | Генерирует `preload.php` из существующих сборочных артефактов. |
 | `app:cache:clear` | Очищает каталоги сборочного, dev- и runtime-кеша. Опции `--build`, `--dev`, `--runtime` ограничивают область очистки. |
 
@@ -69,7 +69,7 @@ return [
 
 ## Связанные Пакеты
 
-- [`componenta/app`](https://github.com/componenta/app/blob/main/README.ru.md) описывает области выполнения, адаптеры и загрузчики.
+- [`componenta/app`](https://github.com/componenta/app/blob/main/README.ru.md) описывает области выполнения, выбор приложения и загрузчики.
 - [`componenta/error-handler`](https://github.com/componenta/error-handler/blob/main/README.ru.md) дает контракты обработки ошибок, которые используют консольные слушатели.
 - [`componenta/cycle-app`](https://github.com/componenta/cycle-app/blob/main/README.ru.md) добавляет команды `db:*`.
 - [`componenta/router-app`](https://github.com/componenta/router-app/blob/main/README.ru.md) добавляет `router:list`.

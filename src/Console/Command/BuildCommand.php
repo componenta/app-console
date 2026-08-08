@@ -8,7 +8,7 @@ use Componenta\App\Cache\AtomicFile;
 use Componenta\App\Cache\CacheLayout;
 use Componenta\App\ConfigKey;
 use Componenta\App\Discovery\Compile\CompileCacheContributorInterface;
-use Componenta\App\Discovery\Compile\DiPlanBuilder;
+
 use Componenta\App\Discovery\Compile\DiscoveryCompiler;
 use Componenta\App\Discovery\ListenerCompiler;
 use Componenta\App\Discovery\ListenerRestorer;
@@ -18,8 +18,6 @@ use Componenta\ClassFinder\ClassListenerProviderInterface;
 use Componenta\ClassFinder\Compile\ConfigKey as ClassFinderCompileConfigKey;
 use Componenta\Config\Config;
 use Componenta\Config\ConfigLoader;
-use Componenta\DI\Compile\PlanCompiler;
-use Componenta\DI\Compile\PlanDispatcher;
 use Componenta\DI\ConfigKey as DiConfigKey;
 use Componenta\DI\ContainerBuilder;
 use Componenta\Stdlib\PathResolverInterface;
@@ -56,11 +54,51 @@ final class BuildCommand extends Command
         }
 
         $cache = CacheLayout::fromConfig($this->config, $this->paths);
-        $config = config_merge($this->config->toArray(), $this->compileDiscoveryDelta($cache));
+        $compiled = $this->compileDiscovery($cache);
+        $config = config_merge($this->config->toArray(), $compiled['delta']);
         $dependencies = $config[DiConfigKey::DEPENDENCIES] ?? [];
 
         if (!is_array($dependencies)) {
             throw new RuntimeException('DI dependencies config must be an array.');
+        }
+
+        $entryClasses = $this->entryClasses($compiled['iterator']);
+        $generatedResolver = false;
+
+        if ($entryClasses !== []) {
+            $releaseFingerprint = bin2hex(random_bytes(32));
+            $builder = ContainerBuilder::configureWithDependencies(
+                new Config($config, $this->config->environment),
+                $dependencies,
+            );
+            $builder->addService(PathResolverInterface::class, $this->paths);
+
+            if ($compiled['iterator'] !== null) {
+                $builder->addService(ClassIteratorInterface::class, $compiled['iterator']);
+            }
+
+            $builder->compileGeneratedEntryResolver(
+                $entryClasses,
+                $cache->containerResolver,
+                releaseFingerprint: $releaseFingerprint,
+            );
+            $dependencies[DiConfigKey::GENERATED_ENTRY_RESOLVER_FILE]
+                = CacheLayout::CONTAINER_RESOLVER;
+            $dependencies[DiConfigKey::GENERATED_ENTRY_RESOLVER_RELEASE_FINGERPRINT]
+                = $releaseFingerprint;
+            $generatedResolver = true;
+        } else {
+            unset(
+                $dependencies[DiConfigKey::GENERATED_ENTRY_RESOLVER_FILE],
+                $dependencies[DiConfigKey::GENERATED_ENTRY_RESOLVER_RELEASE_FINGERPRINT],
+            );
+
+            if (is_file($cache->containerResolver) && !unlink($cache->containerResolver)) {
+                throw new RuntimeException(sprintf(
+                    'Cannot remove stale generated container resolver: %s',
+                    $cache->containerResolver,
+                ));
+            }
         }
 
         unset($config[DiConfigKey::DEPENDENCIES]);
@@ -71,18 +109,28 @@ final class BuildCommand extends Command
             DiConfigKey::DEPENDENCIES => ContainerBuilder::normalizeDependencies($dependencies),
         ]), 'container cache');
 
-        $io->success([
+        $artifacts = [
             sprintf('Config cache: %s', $cache->config),
             sprintf('Container cache: %s', $cache->container),
-        ]);
+        ];
+
+        if ($generatedResolver) {
+            $artifacts[] = sprintf('Generated container resolver: %s', $cache->containerResolver);
+        }
+
+        $io->success($artifacts);
 
         return Command::SUCCESS;
     }
 
     /**
-     * @return array<string, mixed>
+     * @return array{
+     *     delta: array<string, mixed>,
+     *     classes: list<class-string>,
+     *     iterator: ?ClassIteratorInterface
+     * }
      */
-    private function compileDiscoveryDelta(CacheLayout $cache): array
+    private function compileDiscovery(CacheLayout $cache): array
     {
         if (!$this->container->has(ClassIteratorInterface::class)) {
             if ($this->hasDiscoveryWork()) {
@@ -92,22 +140,26 @@ final class BuildCommand extends Command
                 ));
             }
 
-            return [];
+            return [
+                'delta' => [],
+                'classes' => [],
+                'iterator' => null,
+            ];
         }
 
-        /** @var ClassIteratorInterface $iterator */
         $iterator = $this->container->get(ClassIteratorInterface::class);
-        $discoveryCache = $this->container->get(ListenerCompiler::class)->compile($iterator);
-        $diPlanBuilder = $this->container->get(DiPlanBuilder::class);
-        $diPlans = $diPlanBuilder->compile($discoveryCache['classes']);
-        $dispatcherMap = $diPlanBuilder->dispatcherMap();
 
+        if (!$iterator instanceof ClassIteratorInterface) {
+            throw new RuntimeException(sprintf(
+                '%s container entry must implement %s.',
+                ClassIteratorInterface::class,
+                ClassIteratorInterface::class,
+            ));
+        }
+
+        $discoveryCache = $this->container->get(ListenerCompiler::class)->compile($iterator);
         $delta = [
             ListenerRestorer::CACHE_KEY => $discoveryCache,
-            DiConfigKey::DEPENDENCIES => [
-                PlanCompiler::CONFIG_KEY => $diPlans,
-                PlanDispatcher::CONFIG_KEY => $dispatcherMap,
-            ],
         ];
 
         if ($this->container->has(ClassListenerProviderInterface::class)
@@ -128,7 +180,31 @@ final class BuildCommand extends Command
             $delta = config_merge($delta, $contribution);
         }
 
-        return $delta;
+        return [
+            'delta' => $delta,
+            'classes' => $discoveryCache['classes'],
+            'iterator' => $iterator,
+        ];
+    }
+
+    /** @return list<class-string> */
+    private function entryClasses(?ClassIteratorInterface $classes): array
+    {
+        if ($classes === null) {
+            return [];
+        }
+
+        $entries = [];
+
+        foreach ($classes as $class) {
+            if ($class->isConcrete) {
+                $entries[$class->fullyQualifiedName] = true;
+            }
+        }
+
+        ksort($entries);
+
+        return array_keys($entries);
     }
 
     private function hasDiscoveryWork(): bool

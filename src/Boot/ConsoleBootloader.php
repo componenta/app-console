@@ -72,22 +72,6 @@ final class ConsoleBootloader implements BootloaderInterface
 
             $command = $context->container->get($class->fullyQualifiedName, Command::class);
 
-            $command->setName($asCommand->name);
-
-            if ($asCommand->description !== null) {
-                $command->setDescription($asCommand->description);
-            }
-
-            if ($asCommand->help !== null) {
-                $command->setHelp($asCommand->help);
-            }
-
-            if ($asCommand->usages !== []) {
-                foreach ($asCommand->usages as $usage) {
-                    $command->addUsage($usage);
-                }
-            }
-
             $this->commands->register($app, $command);
         }
     }
