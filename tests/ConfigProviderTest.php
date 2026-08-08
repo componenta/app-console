@@ -34,7 +34,7 @@ describe('console app config provider', function (): void {
             CacheClearCommand::class,
             PreloadCommand::class,
         ])->and($config[DependencyConfigKey::DEPENDENCIES])
-            ->not->toHaveKey(DependencyConfigKey::AUTOWIRES);
+            ->not->toHaveKey('autowires');
     });
 
     it('registers the production AsCommand compile contributor', function (): void {

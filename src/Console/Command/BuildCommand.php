@@ -4,16 +4,23 @@ declare(strict_types=1);
 
 namespace Componenta\App\Console\Command;
 
+use Closure;
 use Componenta\App\Cache\AtomicFile;
 use Componenta\App\Cache\CacheLayout;
+use Componenta\App\Config\ConfigFactory;
+use Componenta\App\Config\ConfigDefinitionInterface;
+use Componenta\App\Config\ConfigFactoryResult;
 use Componenta\App\ConfigKey;
+use Componenta\App\ContainerCacheMode;
+use Componenta\App\ContainerFactory;
+use Componenta\App\ContainerFactoryOptions;
 use Componenta\App\Discovery\Compile\CompileCacheContributorInterface;
-
 use Componenta\App\Discovery\Compile\DiscoveryCompiler;
 use Componenta\App\Discovery\ListenerCompiler;
 use Componenta\App\Discovery\ListenerRestorer;
 use Componenta\ClassFinder\ConfigKey as ClassFinderConfigKey;
 use Componenta\ClassFinder\ClassIteratorInterface;
+use Componenta\ClassFinder\ClassListenerNotifier;
 use Componenta\ClassFinder\ClassListenerProviderInterface;
 use Componenta\ClassFinder\Compile\ConfigKey as ClassFinderCompileConfigKey;
 use Componenta\Config\Config;
@@ -37,10 +44,13 @@ use function Componenta\Config\config_merge;
 )]
 final class BuildCommand extends Command
 {
+    /**
+     * @param null|Closure(): mixed $sourceFactory
+     */
     public function __construct(
         private readonly Config $config,
         private readonly PathResolverInterface $paths,
-        private readonly ContainerInterface $container,
+        private readonly ?Closure $sourceFactory = null,
     ) {
         parent::__construct();
     }
@@ -53,14 +63,33 @@ final class BuildCommand extends Command
             throw new RuntimeException('app:build must run with APP_ENV=development so it can build from source configuration and discovery metadata.');
         }
 
-        $cache = CacheLayout::fromConfig($this->config, $this->paths);
-        $compiled = $this->compileDiscovery($cache);
-        $config = config_merge($this->config->toArray(), $compiled['delta']);
-        $dependencies = $config[DiConfigKey::DEPENDENCIES] ?? [];
+        $source = $this->source();
+        $sourceConfig = $source->config;
+        $cache = CacheLayout::fromConfig($sourceConfig, $this->paths);
+        $buildContainer = ContainerFactory::create(
+            paths: $this->paths,
+            config: $sourceConfig,
+            discovered: $source->discovered,
+            options: new ContainerFactoryOptions(ContainerCacheMode::Disabled),
+        );
 
-        if (!is_array($dependencies)) {
-            throw new RuntimeException('DI dependencies config must be an array.');
+        if ($source->discovered !== null
+            && $this->hasDiscoveryWork($sourceConfig)
+            && $buildContainer->has(ClassListenerNotifier::class)
+        ) {
+            $notifier = $buildContainer->get(ClassListenerNotifier::class);
+
+            if ($notifier instanceof ClassListenerNotifier) {
+                $notifier->notify($source->discovered);
+            }
         }
+
+        $compiled = $this->compileDiscovery($cache, $sourceConfig, $buildContainer, $source->discovered);
+        $config = self::mergeConfigDelta($sourceConfig->toArray(), $compiled['delta']);
+        $dependencies = self::stringKeyedArray(
+            $config[DiConfigKey::DEPENDENCIES] ?? [],
+            'DI dependencies config',
+        );
 
         $entryClasses = $this->entryClasses($compiled['iterator']);
         $generatedResolver = false;
@@ -68,7 +97,7 @@ final class BuildCommand extends Command
         if ($entryClasses !== []) {
             $releaseFingerprint = bin2hex(random_bytes(32));
             $builder = ContainerBuilder::configureWithDependencies(
-                new Config($config, $this->config->environment),
+                new Config($config, $sourceConfig->environment),
                 $dependencies,
             );
             $builder->addService(PathResolverInterface::class, $this->paths);
@@ -103,7 +132,7 @@ final class BuildCommand extends Command
 
         unset($config[DiConfigKey::DEPENDENCIES]);
 
-        ConfigLoader::export(new Config($config, $this->config->environment), $cache->config);
+        ConfigLoader::export(new Config($config, $sourceConfig->environment), $cache->config);
         AtomicFile::replace($cache->container, $this->phpReturn([
             'version' => ContainerBuilder::CACHE_VERSION,
             DiConfigKey::DEPENDENCIES => ContainerBuilder::normalizeDependencies($dependencies),
@@ -123,17 +152,58 @@ final class BuildCommand extends Command
         return Command::SUCCESS;
     }
 
+    private function source(): ConfigFactoryResult
+    {
+        if ($this->sourceFactory !== null) {
+            $source = ($this->sourceFactory)();
+
+            if (!$source instanceof ConfigFactoryResult) {
+                throw new RuntimeException(sprintf(
+                    'Build source factory must return %s, got %s.',
+                    ConfigFactoryResult::class,
+                    get_debug_type($source),
+                ));
+            }
+
+            return $source;
+        }
+
+        $paths = $this->paths;
+
+        return ConfigFactory::create(
+            paths: $paths,
+            definition: static function () use ($paths): ConfigDefinitionInterface {
+                $definition = require $paths->resolve('config/config.php');
+
+                if (!$definition instanceof ConfigDefinitionInterface) {
+                    throw new RuntimeException(sprintf(
+                        'Source config definition must implement %s; got %s.',
+                        ConfigDefinitionInterface::class,
+                        get_debug_type($definition),
+                    ));
+                }
+
+                return $definition;
+            },
+            environment: $this->config->environment,
+            loadCachedCompileDelta: false,
+        );
+    }
+
     /**
      * @return array{
      *     delta: array<string, mixed>,
-     *     classes: list<class-string>,
      *     iterator: ?ClassIteratorInterface
      * }
      */
-    private function compileDiscovery(CacheLayout $cache): array
-    {
-        if (!$this->container->has(ClassIteratorInterface::class)) {
-            if ($this->hasDiscoveryWork()) {
+    private function compileDiscovery(
+        CacheLayout $cache,
+        Config $config,
+        ContainerInterface $container,
+        ?ClassIteratorInterface $iterator,
+    ): array {
+        if ($iterator === null) {
+            if ($this->hasDiscoveryWork($config)) {
                 throw new RuntimeException(sprintf(
                     'Cannot build discovery cache: %s is not available while discovery listeners, listener compilers, or compile contributors are configured.',
                     ClassIteratorInterface::class,
@@ -142,47 +212,66 @@ final class BuildCommand extends Command
 
             return [
                 'delta' => [],
-                'classes' => [],
                 'iterator' => null,
             ];
         }
 
-        $iterator = $this->container->get(ClassIteratorInterface::class);
+        $discoveryCache = [];
 
-        if (!$iterator instanceof ClassIteratorInterface) {
+        $hasDiscoveryWork = $this->hasDiscoveryWork($config);
+        if ($hasDiscoveryWork && $container->has(ListenerCompiler::class)) {
+            $listenerCompiler = $container->get(ListenerCompiler::class);
+
+            if (!$listenerCompiler instanceof ListenerCompiler) {
+                throw new RuntimeException(sprintf(
+                    '%s container entry must be %s.',
+                    ListenerCompiler::class,
+                    ListenerCompiler::class,
+                ));
+            }
+
+            $discoveryCache = $listenerCompiler->compile($iterator);
+        } elseif ($hasDiscoveryWork) {
             throw new RuntimeException(sprintf(
-                '%s container entry must implement %s.',
-                ClassIteratorInterface::class,
-                ClassIteratorInterface::class,
+                'Cannot build discovery cache: %s is not available.',
+                ListenerCompiler::class,
             ));
         }
 
-        $discoveryCache = $this->container->get(ListenerCompiler::class)->compile($iterator);
-        $delta = $discoveryCache['classes'] === [] && $discoveryCache['targets'] === []
+        $classes = $discoveryCache['classes'] ?? [];
+        $hasFilteredListeners = isset($discoveryCache['targets']) || isset($discoveryCache['empty_targets']);
+        $delta = $classes === [] && !$hasFilteredListeners
             ? []
             : [ListenerRestorer::CACHE_KEY => $discoveryCache];
 
-        if ($this->container->has(ClassListenerProviderInterface::class)
-            && $this->container->has(DiscoveryCompiler::class)
+        if ($container->has(ClassListenerProviderInterface::class)
+            && $container->has(DiscoveryCompiler::class)
         ) {
-            /** @var ClassListenerProviderInterface $provider */
-            $provider = $this->container->get(ClassListenerProviderInterface::class);
-            /** @var DiscoveryCompiler $compiler */
-            $compiler = $this->container->get(DiscoveryCompiler::class);
+            $provider = $container->get(ClassListenerProviderInterface::class);
+            $compiler = $container->get(DiscoveryCompiler::class);
 
-            $delta = config_merge($delta, $compiler->compile(
+            if (!$provider instanceof ClassListenerProviderInterface
+                || !$compiler instanceof DiscoveryCompiler
+            ) {
+                throw new RuntimeException(sprintf(
+                    'Discovery compilation requires %s and %s container services.',
+                    ClassListenerProviderInterface::class,
+                    DiscoveryCompiler::class,
+                ));
+            }
+
+            $delta = self::mergeConfigDelta($delta, $compiler->compile(
                 $provider->getClassListeners(),
                 dirname($cache->config),
             ));
         }
 
-        foreach ($this->compileContributors($discoveryCache['classes']) as $contribution) {
-            $delta = config_merge($delta, $contribution);
+        foreach ($this->compileContributors($config, $container, $classes) as $contribution) {
+            $delta = self::mergeConfigDelta($delta, $contribution);
         }
 
         return [
             'delta' => $delta,
-            'classes' => $discoveryCache['classes'],
             'iterator' => $iterator,
         ];
     }
@@ -198,7 +287,16 @@ final class BuildCommand extends Command
 
         foreach ($classes as $class) {
             if ($class->isConcrete) {
-                $entries[$class->fullyQualifiedName] = true;
+                $name = $class->fullyQualifiedName;
+
+                if (!class_exists($name)) {
+                    throw new RuntimeException(sprintf(
+                        'Cannot compile generated resolver: discovered class "%s" is not loadable.',
+                        $name,
+                    ));
+                }
+
+                $entries[$name] = true;
             }
         }
 
@@ -207,14 +305,14 @@ final class BuildCommand extends Command
         return array_keys($entries);
     }
 
-    private function hasDiscoveryWork(): bool
+    private function hasDiscoveryWork(Config $config): bool
     {
         foreach ([
             ClassFinderConfigKey::LISTENERS,
             ClassFinderCompileConfigKey::LISTENER_COMPILERS,
             ConfigKey::COMPILE_CACHE_CONTRIBUTORS,
         ] as $key) {
-            $entries = $this->config->get($key, []);
+            $entries = $config->get($key, []);
 
             if (is_array($entries) && $entries !== []) {
                 return true;
@@ -225,12 +323,16 @@ final class BuildCommand extends Command
     }
 
     /**
-     * @param array<string, class-string> $classes
+     * @param list<class-string> $classes
      * @return list<array<string, mixed>>
      */
-    private function compileContributors(array $classes): array
+    private function compileContributors(
+        Config $config,
+        ContainerInterface $container,
+        array $classes,
+    ): array
     {
-        $entries = $this->config->get(ConfigKey::COMPILE_CACHE_CONTRIBUTORS, []);
+        $entries = $config->get(ConfigKey::COMPILE_CACHE_CONTRIBUTORS, []);
 
         if (!is_array($entries)) {
             throw new RuntimeException(sprintf('%s config value must be an array.', ConfigKey::COMPILE_CACHE_CONTRIBUTORS));
@@ -239,7 +341,7 @@ final class BuildCommand extends Command
         $contributions = [];
 
         foreach ($entries as $entry) {
-            $contributor = is_string($entry) ? $this->container->get($entry) : $entry;
+            $contributor = is_string($entry) ? $container->get($entry) : $entry;
 
             if (!$contributor instanceof CompileCacheContributorInterface) {
                 throw new RuntimeException(sprintf(
@@ -260,5 +362,47 @@ final class BuildCommand extends Command
     private function phpReturn(array $data): string
     {
         return "<?php\n\ndeclare(strict_types=1);\n\nreturn " . Export::pretty($data) . ";\n";
+    }
+
+    /**
+     * @param array<array-key, mixed> $base
+     * @param array<array-key, mixed> $override
+     * @return array<string, mixed>
+     */
+    private static function mergeConfigDelta(array $base, array $override): array
+    {
+        return self::stringKeyedArray(
+            config_merge($base, $override),
+            'Compiled config delta',
+        );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private static function stringKeyedArray(mixed $value, string $label): array
+    {
+        if (!is_array($value)) {
+            throw new RuntimeException(sprintf(
+                '%s must be an array; got %s.',
+                $label,
+                get_debug_type($value),
+            ));
+        }
+
+        $normalized = [];
+
+        foreach ($value as $key => $item) {
+            if (!is_string($key)) {
+                throw new RuntimeException(sprintf(
+                    '%s must contain only string root keys.',
+                    $label,
+                ));
+            }
+
+            $normalized[$key] = $item;
+        }
+
+        return $normalized;
     }
 }

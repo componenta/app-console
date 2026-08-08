@@ -60,6 +60,12 @@ return [
 | `app:preload` | Генерирует `preload.php` из существующих сборочных артефактов. |
 | `app:cache:clear` | Очищает каталоги сборочного, dev- и runtime-кеша. Опции `--build`, `--dev`, `--runtime` ограничивают область очистки. |
 
+`app:build` заново загружает исходную конфигурацию из стандартного `config/config.php` и создаёт отдельный build-container с отключённым кешированием. Текущая прогретая dev-конфигурация не подмешивается в результат, поэтому удалённые маршруты, обработчики и значения compile delta не попадут в новый production artifact.
+
+Discovery финализируется один раз, после чего все listener compilers и зарегистрированные cache contributors получают один и тот же снимок исходных данных. Пустые массивы, `null` и стандартные значения `false` не записываются. Обязательный маркер версии, например пустая CQRS map v2 `['version' => 2]`, сохраняется, потому что это не пустая секция.
+
+Generated resolver и его release fingerprint записываются в container cache парой. Production проверяет эту пару без повторного SHA-256 исходников приложения при каждом bootstrap. Повторяйте `app:build` после изменений провайдеров, обнаруживаемых PHP-классов, маршрутов, CQRS metadata, resolver chains или deployment dependencies.
+
 ## Основной API
 
 - `ConsoleCommandRegistryInterface` хранит команды консольного приложения.

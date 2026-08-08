@@ -60,6 +60,12 @@ The package registers these commands:
 | `app:preload` | Generates `preload.php` from existing build cache artifacts. |
 | `app:cache:clear` | Clears build, development, and runtime cache directories. Use `--build`, `--dev`, or `--runtime` to limit the scope. |
 
+`app:build` creates a fresh source configuration and a cache-disabled build container from the conventional `config/config.php`. It does not merge the currently warmed development config into the result, so deleted routes, handlers, and compile-delta values cannot leak into a new production artifact.
+
+Discovery finalizes once, then every listener compiler and configured cache contributor receives the same source snapshot. Empty arrays, `null`, and default `false` contribution values are omitted. A required version marker, such as the empty CQRS v2 map `['version' => 2]`, remains because it is not an empty section.
+
+The generated resolver and its release fingerprint are written into the container cache as a pair. Production validates that pair without recalculating SHA-256 over application source on each bootstrap. Re-run `app:build` whenever providers, discovered PHP classes, routes, CQRS metadata, resolver chains, or deployment dependencies change.
+
 ## Public API
 
 - `ConsoleCommandRegistryInterface` stores command definitions for the console application.

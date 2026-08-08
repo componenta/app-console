@@ -4,15 +4,13 @@ declare(strict_types=1);
 
 use Componenta\App\Cache\CacheLayout;
 use Componenta\App\Console\Command\BuildCommand;
+use Componenta\App\Config\ConfigFactoryResult;
 use Componenta\App\ConfigKey as AppConfigKey;
 use Componenta\App\ContainerCacheMode;
 use Componenta\App\ContainerFactory;
 use Componenta\App\ContainerFactoryOptions;
-use Componenta\App\Discovery\ListenerCompiler;
 use Componenta\App\Discovery\ListenerRestorer;
 use Componenta\ClassFinder\ClassIterator;
-use Componenta\ClassFinder\ClassIteratorInterface;
-use Componenta\ClassFinder\ClassListenerProviderInterface;
 use Componenta\ClassFinder\ConfigKey as ClassFinderConfigKey;
 use Componenta\Config\Config;
 use Componenta\Config\ConfigLoader;
@@ -20,34 +18,7 @@ use Componenta\Config\Environment;
 use Componenta\DI\ConfigKey as DiConfigKey;
 use Componenta\Stdlib\PathResolverInterface;
 use Componenta\Tokenizer\ClassInfo;
-use Psr\Container\ContainerInterface;
 use Symfony\Component\Console\Tester\CommandTester;
-
-final class BuildCommandTestContainer implements ContainerInterface
-{
-    /**
-     * @param array<string, mixed> $entries
-     */
-    public function __construct(private readonly array $entries = []) {}
-
-    public function get(string $id): mixed
-    {
-        return $this->entries[$id] ?? throw new RuntimeException($id);
-    }
-
-    public function has(string $id): bool
-    {
-        return array_key_exists($id, $this->entries);
-    }
-}
-
-final class BuildCommandTestListenerProvider implements ClassListenerProviderInterface
-{
-    public function getClassListeners(): iterable
-    {
-        return [];
-    }
-}
 
 abstract class BuildCommandGeneratedAbstract {}
 
@@ -84,7 +55,6 @@ it('refuses to build from non-development environment', function (): void {
     $command = new BuildCommand(
         new Config([], new Environment(['APP_ENV' => 'production'])),
         new BuildCommandTestPathResolver(sys_get_temp_dir()),
-        new BuildCommandTestContainer(),
     );
 
     expect(fn() => (new CommandTester($command))->execute([]))
@@ -92,17 +62,18 @@ it('refuses to build from non-development environment', function (): void {
 });
 
 it('fails clearly when discovery work is configured without class iterator', function (): void {
+    $config = new Config([
+        ClassFinderConfigKey::LISTENERS => [
+            stdClass::class,
+        ],
+        AppConfigKey::COMPILE_CACHE_CONTRIBUTORS => [
+            stdClass::class,
+        ],
+    ], new Environment(['APP_ENV' => 'development']));
     $command = new BuildCommand(
-        new Config([
-            ClassFinderConfigKey::LISTENERS => [
-                stdClass::class,
-            ],
-            AppConfigKey::COMPILE_CACHE_CONTRIBUTORS => [
-                stdClass::class,
-            ],
-        ], new Environment(['APP_ENV' => 'development'])),
+        $config,
         new BuildCommandTestPathResolver(sys_get_temp_dir()),
-        new BuildCommandTestContainer(),
+        static fn (): ConfigFactoryResult => new ConfigFactoryResult($config),
     );
 
     expect(fn() => (new CommandTester($command))->execute([]))
@@ -123,10 +94,7 @@ it('builds and activates a generated DI resolver from discovered concrete classe
     $command = new BuildCommand(
         $config,
         $paths,
-        new BuildCommandTestContainer([
-            ClassIteratorInterface::class => $iterator,
-            ListenerCompiler::class => new ListenerCompiler(new BuildCommandTestListenerProvider()),
-        ]),
+        static fn (): ConfigFactoryResult => new ConfigFactoryResult($config, $iterator),
     );
 
     try {
@@ -172,32 +140,38 @@ it('builds and activates a generated DI resolver from discovered concrete classe
     }
 });
 
-it('omits empty discovery metadata from the generated config cache', function (): void {
+it('omits empty discovery metadata and stale runtime compile deltas from the generated cache', function (): void {
     $root = str_replace(DIRECTORY_SEPARATOR, '/', sys_get_temp_dir())
         . '/componenta_app_console_empty_build_'
         . bin2hex(random_bytes(4));
     $paths = new BuildCommandTestPathResolver($root);
     $iterator = new ClassIterator([]);
-    $config = new Config([], new Environment(['APP_ENV' => 'development']));
+    $environment = new Environment(['APP_ENV' => 'development']);
+    $sourceConfig = new Config([], $environment);
+    $runtimeConfig = new Config([
+        ListenerRestorer::CACHE_KEY => [
+            'classes' => [stdClass::class],
+            'targets' => [],
+        ],
+        'stale.compiled' => true,
+    ], $environment);
     $command = new BuildCommand(
-        $config,
+        $runtimeConfig,
         $paths,
-        new BuildCommandTestContainer([
-            ClassIteratorInterface::class => $iterator,
-            ListenerCompiler::class => new ListenerCompiler(new BuildCommandTestListenerProvider()),
-        ]),
+        static fn (): ConfigFactoryResult => new ConfigFactoryResult($sourceConfig, $iterator),
     );
 
     try {
         $status = (new CommandTester($command))->execute([]);
-        $cache = CacheLayout::fromConfig($config, $paths);
+        $cache = CacheLayout::fromConfig($sourceConfig, $paths);
         $compiledConfig = ConfigLoader::loadFromFile($cache->config)->toArray();
 
         expect($status)->toBe(0)
             ->and(is_file($cache->containerResolver))->toBeFalse()
-            ->and($compiledConfig)->not->toHaveKey(ListenerRestorer::CACHE_KEY);
+            ->and($compiledConfig)->not->toHaveKey(ListenerRestorer::CACHE_KEY)
+            ->and($compiledConfig)->not->toHaveKey('stale.compiled');
     } finally {
-        $cache = CacheLayout::fromConfig($config, $paths);
+        $cache = CacheLayout::fromConfig($sourceConfig, $paths);
 
         foreach ([$cache->containerResolver, $cache->container, $cache->container . '.lock', $cache->config] as $file) {
             if (is_file($file)) {
