@@ -56,15 +56,15 @@ The package registers these commands:
 
 | Command | Purpose |
 |---|---|
-| `app:build` | Writes config and container caches and compiles a generated DI entry resolver for discovered concrete classes. Its build-scoped fingerprint validates the resolver/cache pair in production without hashing source files on every bootstrap. Must run with `APP_ENV=development`. |
+| `app:build` | Writes config and container caches, collects known autowiring roots from build contributors, and emits lazy content-addressed factory shards. Must run with `APP_ENV=development`. |
 | `app:preload` | Generates `preload.php` from existing build cache artifacts. |
 | `app:cache:clear` | Clears build, development, and runtime cache directories. Use `--build`, `--dev`, or `--runtime` to limit the scope. |
 
 `app:build` creates a fresh source configuration and a cache-disabled build container from the conventional `config/config.php`. It does not merge the currently warmed development config into the result, so deleted routes, handlers, and compile-delta values cannot leak into a new production artifact.
 
-Discovery finalizes once, then every listener compiler and configured cache contributor receives the same source snapshot. Empty arrays, `null`, and default `false` contribution values are omitted. A required version marker, such as the empty CQRS v2 map `['version' => 2]`, remains because it is not an empty section.
+Discovery finalizes once, then every listener compiler and configured cache contributor receives the same source snapshot. Empty arrays, `null`, and default `false` contribution values are omitted. A required version marker, such as the empty CQRS v2 map `['version' => 2]`, remains because it is not an empty section. Build-only registries and `#[DevOnly]` listeners are removed from production config; when no runtime listener remains, the discovery class table is omitted too.
 
-The generated resolver and its release fingerprint are written into the container cache as a pair. Production validates that pair without recalculating SHA-256 over application source on each bootstrap. Re-run `app:build` whenever providers, discovered PHP classes, routes, CQRS metadata, resolver chains, or deployment dependencies change.
+Compiled factory definitions are merged into the normal `dependencies.factories` section; explicit application factories win. Shards are loaded on first use, and production performs no source hashing. Re-run `app:build` whenever providers, discovered PHP classes, routes, CQRS metadata, DI extension chains, or deployment dependencies change.
 
 ## Public API
 
