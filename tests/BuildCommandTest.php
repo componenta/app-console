@@ -97,7 +97,7 @@ it('fails clearly when discovery work is configured without class iterator', fun
         ->toThrow(RuntimeException::class, 'Cannot build discovery cache');
 });
 
-it('builds contributed autowiring as regular lazy factory shards', function (): void {
+it('builds contributed autowiring and its dependency graph as lazy factory shards', function (): void {
     $root = str_replace(DIRECTORY_SEPARATOR, '/', sys_get_temp_dir())
         . '/componenta_app_console_build_' . bin2hex(random_bytes(4));
     $paths = new BuildCommandTestPathResolver($root);
@@ -125,12 +125,13 @@ it('builds contributed autowiring as regular lazy factory shards', function (): 
         $dependencies = $containerCache[DiConfigKey::DEPENDENCIES];
         $factories = $dependencies[DiConfigKey::FACTORIES];
         $targetFactory = CompiledFactoryDefinition::decode($factories[BuildCommandCompiledTarget::class]);
+        $dependencyFactory = CompiledFactoryDefinition::decode($factories[BuildCommandCompiledDependency::class]);
 
         expect($containerCache[ContainerBuilder::CACHE_VALIDATED_KEY] ?? false)->toBeTrue()
             ->and($targetFactory)->toBeInstanceOf(CompiledFactoryDefinition::class)
-            ->and($factories)->not->toHaveKey(BuildCommandCompiledDependency::class)
-            ->and($dependencies[DiConfigKey::INVOKABLES])->toContain(BuildCommandCompiledDependency::class)
+            ->and($dependencyFactory)->toBeInstanceOf(CompiledFactoryDefinition::class)
             ->and($cache->build($targetFactory->file))->toBeFile()
+            ->and($cache->build($dependencyFactory->file))->toBeFile()
             ->and(glob($cache->buildDir . '/' . CompiledFactoryShardCompiler::FILE_PREFIX . '*.php'))->not->toBeEmpty()
             ->and(is_file($cache->build('container.resolver.php')))->toBeFalse();
 
