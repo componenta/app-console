@@ -8,7 +8,7 @@
         "componenta/app": "^3.0",
         "componenta/arrayable": "^1.0",
         "componenta/class-finder": "^1.0",
-        "componenta/config": "^2.0",
+        "componenta/config": "^2.0.1",
         "componenta/di": "^4.0",
         "componenta/error-handler": "^1.0",
         "componenta/path-resolver": "^1.0",
