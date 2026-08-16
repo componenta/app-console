@@ -10,7 +10,7 @@
         "componenta/class-finder": "^1.0",
         "componenta/config": "^2.0.2",
         "componenta/di": "^4.0.2",
-        "componenta/error-handler": "^1.0",
+        "componenta/error-handler": "^1.0.2",
         "componenta/path-resolver": "^1.0",
         "componenta/reflection": "^2.0",
         "componenta/scope": "^1.0",
