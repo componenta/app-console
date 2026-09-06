@@ -29,16 +29,50 @@ jobs:
           ref: main
           path: di-source
 
+      - uses: actions/checkout@v7
+        with:
+          repository: componenta/config
+          ref: main
+          path: config-source
+
+      - uses: actions/checkout@v7
+        with:
+          repository: componenta/validation
+          ref: main
+          path: validation-source
+
+      - uses: actions/checkout@v7
+        with:
+          repository: componenta/reflection
+          ref: main
+          path: reflection-source
+
       - uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
           coverage: none
           tools: composer:v2
 
-      - run: composer config --working-dir=app-source version 3.0.2
-      - run: composer config --working-dir=di-source version 4.0.2
-      - run: composer config repositories.app path app-source
-      - run: composer config repositories.di path di-source
+      - name: Use App 4 source
+        run: >-
+          composer config repositories.app
+          '{"type":"path","url":"app-source","options":{"symlink":false,"versions":{"componenta/app":"4.0.0"}}}'
+      - name: Use DI 5 source
+        run: >-
+          composer config repositories.di
+          '{"type":"path","url":"di-source","options":{"symlink":false,"versions":{"componenta/di":"5.0.0"}}}'
+      - name: Use Config 3 source
+        run: >-
+          composer config repositories.config
+          '{"type":"path","url":"config-source","options":{"symlink":false,"versions":{"componenta/config":"3.0.0"}}}'
+      - name: Use validation source
+        run: >-
+          composer config repositories.validation
+          '{"type":"path","url":"validation-source","options":{"symlink":false,"versions":{"componenta/validation":"2.0.1"}}}'
+      - name: Use reflection 2 source
+        run: >-
+          composer config repositories.reflection
+          '{"type":"path","url":"reflection-source","options":{"symlink":false,"versions":{"componenta/reflection":"2.0.0"}}}'
       - run: composer validate --strict
       - run: composer update --no-interaction --prefer-dist
       - run: composer test
