@@ -7,9 +7,6 @@ namespace Componenta\App\Console;
 use Componenta\App\AppInterface;
 use Componenta\Error\Context\CliContext;
 use Componenta\Error\Handler\CliErrorHandlerInterface;
-use Psr\Container\ContainerExceptionInterface;
-use Psr\Container\ContainerInterface;
-use Psr\Container\NotFoundExceptionInterface;
 use Symfony\Component\Console\Application;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
@@ -23,7 +20,7 @@ final class App implements AppInterface, EventListenerProviderInterface
     /**
      * Underlying Symfony Console Application
      */
-    private(set) readonly Application $console;
+    public private(set) readonly Application $console;
 
     /** @var list<EventListenerInterface> */
     private array $listeners = [];
@@ -33,18 +30,22 @@ final class App implements AppInterface, EventListenerProviderInterface
 
     public string $name {
         get => $this->console->getName();
-        set => $this->console->setName($value);
+        set {
+            $this->console->setName($value);
+        }
     }
 
     public string $version {
         get => $this->console->getVersion();
-        set => $this->console->setVersion($value);
+        set {
+            $this->console->setVersion($value);
+        }
     }
 
     public function __construct(
         private readonly IOFactory                       $ioFactory,
         private readonly EventDispatcherFactoryInterface $dispatcherFactory,
-        private(set) readonly CliErrorHandlerInterface   $errorHandler,
+        public private(set) readonly CliErrorHandlerInterface   $errorHandler,
         string                                           $name = 'Componenta',
         string                                           $version = '1.0.0',
     ) {
@@ -53,7 +54,7 @@ final class App implements AppInterface, EventListenerProviderInterface
         $this->console->setCatchExceptions(false);
     }
 
-    public function run(): ?int
+    public function run(): int
     {
         $dispatcher = $this->dispatcherFactory->createDispatcher();
 
@@ -85,7 +86,7 @@ final class App implements AppInterface, EventListenerProviderInterface
 
     public function add(Command $command): Command
     {
-        return $this->console->addCommand($command);
+        return $this->console->addCommand($command) ?? $command;
     }
 
     /**
@@ -106,26 +107,4 @@ final class App implements AppInterface, EventListenerProviderInterface
         $this->subscribers[] = $subscriber;
     }
 
-    /**
-     * @throws ContainerExceptionInterface
-     * @throws NotFoundExceptionInterface
-     */
-    public static function createFromContainer(ContainerInterface $container): self
-    {
-        return new self(
-            ioFactory: $container->has(IOFactory::class)
-                ? $container->get(IOFactory::class)
-                : new IOFactory(),
-            dispatcherFactory: $container->has(EventDispatcherFactoryInterface::class)
-                ? $container->get(EventDispatcherFactoryInterface::class)
-                : new EventDispatcherFactory(),
-            errorHandler: $container->get(CliErrorHandlerInterface::class),
-            name: $container->has('app.name')
-                ? $container->get('app.name')
-                : 'Componenta',
-            version: $container->has('app.version')
-                ? $container->get('app.version')
-                : '1.0.0',
-        );
-    }
 }

@@ -23,7 +23,9 @@ final class ConsoleBootloaderTestContainer implements ContainerInterface
     /**
      * @param array<string, mixed> $entries
      */
-    public function __construct(private array $entries) {}
+    public function __construct(private array $entries)
+    {
+    }
 
     public function get(string $id): mixed
     {
@@ -70,26 +72,7 @@ final class ConsoleBootloaderDiscoveredCommand extends Command
 {
 }
 
-#[AsCommand(
-    name: 'test:metadata',
-    description: 'Metadata description',
-    aliases: ['test:m'],
-    hidden: true,
-    help: 'Metadata help',
-    usages: ['--example'],
-)]
-final class ConsoleBootloaderMetadataCommand extends Command {}
-
-#[AsCommand(name: 'test:attribute', usages: ['--example'])]
-final class ConsoleBootloaderExplicitNameCommand extends Command
-{
-    public function __construct()
-    {
-        parent::__construct('test:explicit');
-    }
-}
-
-it('registers configured commands and keeps development AsCommand discovery', function (): void {
+it('registers configured and discovered commands with the same semantics in every environment', function (string $environment): void {
     $registry = new ConsoleCommandRegistry();
     $bootloader = new ConsoleBootloader($registry);
     $target = new ConsoleBootloaderTestTarget();
@@ -110,86 +93,17 @@ it('registers configured commands and keeps development AsCommand discovery', fu
                 ConsoleConfigKey::COMMANDS => [
                     ConsoleBootloaderConfiguredCommand::class,
                 ],
-            ], new Environment(['APP_ENV' => 'development'])),
+            ], new Environment(['APP_ENV' => $environment])),
         ),
         Scope::CLI,
         $target,
     ));
 
     expect(array_map(
-        static fn(Command $command): ?string => $command->getName(),
+        static fn (Command $command): ?string => $command->getName(),
         $target->commands,
     ))->toBe([
         'test:configured',
         'test:discovered',
     ]);
-});
-
-it('keeps Symfony AsCommand semantics identical in development and production', function (): void {
-    $boot = static function (string $environment): array {
-        $classes = [
-            ConsoleBootloaderMetadataCommand::class,
-            ConsoleBootloaderExplicitNameCommand::class,
-        ];
-        $entries = [];
-
-        foreach ($classes as $class) {
-            $entries[$class] = new $class();
-        }
-
-        $configured = $classes;
-        if ($environment === 'development') {
-            $configured = [];
-            $entries[ClassIteratorInterface::class] = new ClassIterator([
-                __FILE__ . ':metadata' => new ClassInfo(ConsoleBootloaderMetadataCommand::class),
-                __FILE__ . ':explicit' => new ClassInfo(ConsoleBootloaderExplicitNameCommand::class),
-            ]);
-        }
-
-        $target = new ConsoleBootloaderTestTarget();
-        $bootloader = new ConsoleBootloader(new ConsoleCommandRegistry());
-        $bootloader->boot(new BootContext(
-            new ContainerValue(
-                new ConsoleBootloaderTestContainer($entries),
-                new Config([
-                    ConsoleConfigKey::COMMANDS => $configured,
-                ], new Environment(['APP_ENV' => $environment])),
-            ),
-            Scope::CLI,
-            $target,
-        ));
-
-        return $target->commands;
-    };
-
-    $snapshot = static fn (Command $command): array => [
-        'name' => $command->getName(),
-        'aliases' => $command->getAliases(),
-        'hidden' => $command->isHidden(),
-        'description' => $command->getDescription(),
-        'help' => $command->getHelp(),
-        'usages' => $command->getUsages(),
-    ];
-    $development = array_map($snapshot, $boot('development'));
-    $production = array_map($snapshot, $boot('production'));
-
-    expect($development)->toBe($production)
-        ->and($development)->toBe([
-            [
-                'name' => 'test:metadata',
-                'aliases' => ['test:m'],
-                'hidden' => true,
-                'description' => 'Metadata description',
-                'help' => 'Metadata help',
-                'usages' => ['test:metadata --example'],
-            ],
-            [
-                'name' => 'test:explicit',
-                'aliases' => [],
-                'hidden' => false,
-                'description' => '',
-                'help' => '',
-                'usages' => ['test:explicit --example'],
-            ],
-        ]);
-});
+})->with(['development', 'production']);

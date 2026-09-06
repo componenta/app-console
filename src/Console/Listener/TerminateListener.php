@@ -51,7 +51,7 @@ abstract class TerminateListener extends AbstractEventListener
         string $eventName = ConsoleEvents::TERMINATE,
         int $priority = 0,
     ): EventListenerInterface {
-        return new class($callback, $priority) extends TerminateListener {
+        return new class ($callback, $priority) extends TerminateListener {
             public function __construct(
                 private readonly Closure $callback,
                 int $priority,
@@ -111,6 +111,10 @@ abstract class TerminateListener extends AbstractEventListener
     protected function handle(
         ConsoleCommandEvent|ConsoleErrorEvent|ConsoleTerminateEvent|ConsoleSignalEvent $event,
     ): void {
+        if (!$event instanceof ConsoleTerminateEvent) {
+            return;
+        }
+
         $this->handleTerminate($event);
     }
 

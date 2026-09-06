@@ -6,7 +6,9 @@ namespace Componenta\App\Console;
 
 final class ConfigKey
 {
-    private function __construct() {}
+    private function __construct()
+    {
+    }
 
     /**
      * Console command entry ids registered by packages or the application.

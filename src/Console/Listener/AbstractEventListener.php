@@ -40,7 +40,8 @@ abstract class AbstractEventListener implements EventListenerInterface
      */
     public function __construct(
         private readonly int $priority = 0,
-    ) {}
+    ) {
+    }
 
     /**
      * Create a listener from a callable
@@ -57,7 +58,7 @@ abstract class AbstractEventListener implements EventListenerInterface
         string $eventName,
         int $priority = 0,
     ): EventListenerInterface {
-        return new class($callback, $eventName, $priority) extends AbstractEventListener {
+        return new class ($callback, $eventName, $priority) extends AbstractEventListener {
             public function __construct(
                 private readonly Closure $callback,
                 private readonly string $eventName,

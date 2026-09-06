@@ -72,7 +72,7 @@ describe('console command registry', function () {
 
         $registry->register($target, new RegistryTestFirstCommand());
 
-        expect(fn() => $registry->register($target, new RegistryTestSecondCommand()))
+        expect(fn () => $registry->register($target, new RegistryTestSecondCommand()))
             ->toThrow(LogicException::class, 'Console command name "registry:test" is already registered');
     });
 });

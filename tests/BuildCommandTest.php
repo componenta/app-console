@@ -2,281 +2,200 @@
 
 declare(strict_types=1);
 
-use Componenta\App\Cache\CacheLayout;
-use Componenta\App\Console\Command\BuildCommand;
-use Componenta\App\Config\ConfigFactoryResult;
+use Componenta\App\Build\ApplicationBuilderInterface;
+use Componenta\App\Config\ConfigDefinition;
+use Componenta\App\Config\ConfigFactory;
+use Componenta\App\ConfigKey as AppConfigKey;
 use Componenta\App\ConfigProvider as AppConfigProvider;
-use Componenta\App\ContainerCacheMode;
-use Componenta\App\ContainerFactory;
-use Componenta\App\ContainerFactoryOptions;
-use Componenta\App\Discovery\ListenerRestorer;
-use Componenta\ClassFinder\ClassIterator;
-use Componenta\ClassFinder\ClassListenerInterface;
-use Componenta\ClassFinder\Compile\ConfigKey as ClassFinderCompileConfigKey;
-use Componenta\ClassFinder\ConfigKey as ClassFinderConfigKey;
-use Componenta\ClassFinder\ConfigProvider as ClassFinderConfigProvider;
+use Componenta\App\Console\ConfigProvider as ConsoleConfigProvider;
+use Componenta\App\Console\InputFactoryInterface;
+use Componenta\App\Console\IOFactory;
+use Componenta\App\Console\OutputFactoryInterface;
+use Componenta\App\Runner;
+use Componenta\App\Scope;
 use Componenta\Config\Config;
-use Componenta\Config\ConfigLoader;
+use Componenta\Config\ConfigKey;
+use Componenta\Config\ContainerValue;
 use Componenta\Config\Environment;
-use Componenta\DI\Attribute\Autowire;
-use Componenta\DI\Compile\Factory\CompiledFactoryDefinition;
-use Componenta\DI\Compile\Factory\CompiledFactoryShardCompiler;
-use Componenta\DI\ConfigKey as DiConfigKey;
-use Componenta\DI\ContainerBuilder;
+use Componenta\DI\ContainerFactory;
+use Componenta\Error\Context\CliErrorContextInterface;
+use Componenta\Error\Handler\CliErrorHandlerInterface;
+use Componenta\Stdlib\PathResolver;
 use Componenta\Stdlib\PathResolverInterface;
-use Componenta\Tokenizer\ClassInfo;
-use Symfony\Component\Console\Tester\CommandTester;
+use Symfony\Component\Console\Input\ArrayInput;
+use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Output\BufferedOutput;
+use Symfony\Component\Console\Output\OutputInterface;
 
-final readonly class BuildCommandCompiledDependency {}
+/**
+ * @param array<string, mixed> $input
+ * @param callable(): array<array-key, mixed> $provider
+ */
+function buildCommandTestContainer(
+    array $input,
+    BufferedOutput $output,
+    CliErrorHandlerInterface $errors,
+    callable $provider,
+    string $environment = 'production',
+): ContainerValue {
+    $io = new IOFactory(
+        new class($input) implements InputFactoryInterface {
+            public function __construct(private array $input) {}
+            public function createInput(): InputInterface
+            {
+                $input = new ArrayInput($this->input);
+                $input->setInteractive(false);
 
-#[Autowire]
-final readonly class BuildCommandCompiledTarget
-{
-    public function __construct(public BuildCommandCompiledDependency $dependency) {}
-}
-
-final class BuildCommandRuntimeListener implements ClassListenerInterface
-{
-    public function handle(ClassInfo $info): void {}
-}
-
-final class BuildCommandTestPathResolver implements PathResolverInterface
-{
-    public string $baseDir {
-        get => $this->root;
-    }
-
-    public function __construct(private string $root) {}
-
-    public function resolve(string $path): string
-    {
-        if (preg_match('/^[A-Z]:[\\\\\/]/i', $path) === 1 || str_starts_with($path, '/')) {
-            return $path;
-        }
-
-        return $this->root . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $path);
-    }
-}
-
-function removeBuildCommandCache(CacheLayout $cache, string $root): void
-{
-    foreach (glob($cache->buildDir . '/*') ?: [] as $file) {
-        if (is_file($file)) {
-            @unlink($file);
-        }
-    }
-
-    foreach ([
-        $cache->config,
-        $cache->container,
-        $cache->config . '.lock',
-        $cache->container . '.lock',
-    ] as $file) {
-        if (is_file($file)) {
-            @unlink($file);
-        }
-    }
-
-    foreach ([
-        $cache->buildDir,
-        dirname($cache->buildDir),
-        dirname(dirname($cache->buildDir)),
-        $root,
-    ] as $directory) {
-        if (is_dir($directory)) {
-            @rmdir($directory);
-        }
-    }
-}
-
-it('refuses to build from non-development environment', function (): void {
-    $command = new BuildCommand(
-        new Config([], new Environment(['APP_ENV' => 'production'])),
-        new BuildCommandTestPathResolver(sys_get_temp_dir()),
+                return $input;
+            }
+        },
+        new class($output) implements OutputFactoryInterface {
+            public function __construct(private BufferedOutput $output) {}
+            public function createOutput(): OutputInterface { return $this->output; }
+        },
+    );
+    $paths = new PathResolver(sys_get_temp_dir() . '/componenta_build_' . bin2hex(random_bytes(8)));
+    $result = ConfigFactory::create(
+        paths: $paths,
+        definition: new ConfigDefinition(providers: [
+            new AppConfigProvider(),
+            new ConsoleConfigProvider(),
+            $provider,
+            static fn (): array => [
+                ConfigKey::DEPENDENCIES => [
+                    ConfigKey::SERVICES => [
+                        IOFactory::class => $io,
+                        CliErrorHandlerInterface::class => $errors,
+                    ],
+                ],
+            ],
+        ]),
+        environment: new Environment(['APP_ENV' => $environment]),
     );
 
-    expect(fn () => (new CommandTester($command))->execute([]))
-        ->toThrow(RuntimeException::class, 'app:build must run with APP_ENV=development');
-});
+    return (new ContainerFactory())->create($result->composition->config, $result->composition->dependencies);
+}
 
-it('fails clearly when discovery work is configured without class iterator', function (): void {
-    $config = new Config([
-        Componenta\App\ConfigKey::AUTOWIRE_ENTRY_CONTRIBUTORS => [
-            new class implements Componenta\DI\Compile\Autowire\AutowireEntryContributorInterface {
-                public function entries(): iterable
-                {
-                    return [];
-                }
-            },
-        ],
-    ], new Environment(['APP_ENV' => 'development']));
-    $command = new BuildCommand(
-        $config,
-        new BuildCommandTestPathResolver(sys_get_temp_dir()),
-        static fn (): ConfigFactoryResult => new ConfigFactoryResult($config),
-    );
+it('does not construct builders or request their discovery source when listing commands or showing help', function (array $input): void {
+    $created = 0;
+    $output = new BufferedOutput();
+    $errors = $this->createMock(CliErrorHandlerInterface::class);
+    $errors->expects($this->never())->method('handle');
+    $container = buildCommandTestContainer($input, $output, $errors, static function () use (&$created): array {
+        return [
+            AppConfigKey::BUILDERS => ['test.builder'],
+            ConfigKey::DEPENDENCIES => [
+                ConfigKey::FACTORIES => [
+                    'test.builder' => static function (ContainerValue $container) use (&$created): mixed {
+                        $created++;
 
-    expect(fn () => (new CommandTester($command))->execute([]))
-        ->toThrow(RuntimeException::class, 'Cannot build discovery cache');
-});
+                        return $container->get('build.discovery.source');
+                    },
+                    'build.discovery.source' => static function (): never {
+                        throw new LogicException('Build discovery must remain deferred.');
+                    },
+                ],
+            ],
+        ];
+    });
 
-it('builds factory shards without persisting secrets and restores the caller umask', function (): void {
-    $root = str_replace(DIRECTORY_SEPARATOR, '/', sys_get_temp_dir())
-        . '/componenta_app_console_build_' . bin2hex(random_bytes(4));
-    $paths = new BuildCommandTestPathResolver($root);
-    $environment = new Environment([
-        'APP_ENV' => 'development',
-        'BUILD_ONLY_SECRET' => 'must-not-be-persisted',
-    ]);
-    $config = ConfigLoader::load(
+    expect(Runner::run(Scope::CLI, $container))->toBe(0)
+        ->and($created)->toBe(0)
+        ->and($output->fetch())->toContain('app:build');
+})->with([
+    'list' => [['command' => 'list']],
+    'help command' => [['command' => 'help', 'command_name' => 'app:build']],
+    'help option' => [['command' => 'app:build', '--help' => true]],
+]);
+
+it('runs app build through the normal runtime without artifacts or a second Config', function (string $environment): void {
+    $created = 0;
+    $executedWith = [];
+    $providerCalls = 0;
+    $output = new BufferedOutput();
+    $errors = $this->createMock(CliErrorHandlerInterface::class);
+    $errors->expects($this->never())->method('handle');
+    $container = buildCommandTestContainer(
+        ['command' => 'app:build'],
+        $output,
+        $errors,
+        static function () use (&$created, &$executedWith, &$providerCalls): array {
+            $providerCalls++;
+
+            return [
+                AppConfigKey::BUILDERS => ['test.builder'],
+                ConfigKey::DEPENDENCIES => [
+                    ConfigKey::FACTORIES => [
+                        'test.builder' => static function (ContainerValue $container) use (&$created, &$executedWith): ApplicationBuilderInterface {
+                            $created++;
+                            $action = static function () use ($container, &$executedWith): void {
+                                $executedWith[] = $container->config;
+                            };
+
+                            return new class($action) implements ApplicationBuilderInterface {
+                                public function __construct(private Closure $action) {}
+                                public function build(): void { ($this->action)(); }
+                            };
+                        },
+                    ],
+                ],
+            ];
+        },
         $environment,
-        new ClassFinderConfigProvider(),
-        new AppConfigProvider(),
     );
-    $iterator = new ClassIterator([
-        __FILE__ . '#dependency' => new ClassInfo(BuildCommandCompiledDependency::class),
-        __FILE__ . '#target' => new ClassInfo(BuildCommandCompiledTarget::class),
-    ]);
-    $command = new BuildCommand(
-        $config,
-        $paths,
-        static fn (): ConfigFactoryResult => new ConfigFactoryResult($config, $iterator),
+
+    expect($created)->toBe(0)
+        ->and(is_dir($container->get(PathResolverInterface::class)->baseDir))->toBeFalse()
+        ->and(Runner::run(Scope::CLI, $container))->toBe(0)
+        ->and($created)->toBe(1)
+        ->and($providerCalls)->toBe(1)
+        ->and($executedWith)->toBe([$container->config])
+        ->and($container->get(Config::class))->toBe($container->config)
+        ->and($container->config->environment->get('APP_ENV'))->toBe($environment)
+        ->and($output->fetch())->toContain('Application build completed.')
+        ->and(is_dir($container->get(PathResolverInterface::class)->baseDir))->toBeFalse();
+})->with(['development', 'production']);
+
+it('succeeds without any registered builders', function (): void {
+    $output = new BufferedOutput();
+    $errors = $this->createMock(CliErrorHandlerInterface::class);
+    $errors->expects($this->never())->method('handle');
+    $container = buildCommandTestContainer(
+        ['command' => 'app:build'],
+        $output,
+        $errors,
+        static fn (): array => [],
     );
-    $originalUmask = umask(0o027);
 
-    try {
-        expect((new CommandTester($command))->execute([]))->toBe(0);
-
-        $observedUmask = umask(0o027);
-        $cache = CacheLayout::fromConfig($config, $paths);
-        $containerCache = require $cache->container;
-        $dependencies = $containerCache[DiConfigKey::DEPENDENCIES];
-        $factories = $dependencies[DiConfigKey::FACTORIES];
-        $targetFactory = CompiledFactoryDefinition::decode(
-            $factories[BuildCommandCompiledTarget::class],
-        );
-        $dependencyFactory = CompiledFactoryDefinition::decode(
-            $factories[BuildCommandCompiledDependency::class],
-        );
-        $cachedConfig = ConfigLoader::loadFromFile($cache->config);
-        $configSource = file_get_contents($cache->config);
-
-        expect($observedUmask)->toBe(0o027)
-            ->and($containerCache)->not->toHaveKey(ContainerBuilder::CACHE_VALIDATED_KEY)
-            ->and($targetFactory)->toBeInstanceOf(CompiledFactoryDefinition::class)
-            ->and($dependencyFactory)->toBeInstanceOf(CompiledFactoryDefinition::class)
-            ->and($cache->build($targetFactory->file))->toBeFile()
-            ->and($cache->build($dependencyFactory->file))->toBeFile()
-            ->and(glob($cache->buildDir . '/' . CompiledFactoryShardCompiler::FILE_PREFIX . '*.php'))
-            ->not->toBeEmpty()
-            ->and(is_file($cache->build('container.resolver.php')))->toBeFalse()
-            ->and(fileperms($cache->config) & 0o777)->toBe(0o600)
-            ->and(fileperms($cache->container) & 0o777)->toBe(0o600)
-            ->and($cachedConfig->environment)->toBeNull()
-            ->and($configSource)->not->toContain('BUILD_ONLY_SECRET')
-            ->not->toContain('must-not-be-persisted');
-
-        expect($cachedConfig->has(Componenta\App\ConfigKey::AUTOWIRE_ENTRY_CONTRIBUTORS))->toBeFalse()
-            ->and($cachedConfig->has(Componenta\App\ConfigKey::COMPILE_CACHE_CONTRIBUTORS))->toBeFalse()
-            ->and($cachedConfig->has(ClassFinderCompileConfigKey::LISTENER_COMPILERS))->toBeFalse()
-            ->and($cachedConfig->has(ClassFinderConfigKey::LISTENERS))->toBeFalse()
-            ->and($cachedConfig->has(ListenerRestorer::CACHE_KEY))->toBeFalse();
-
-        $container = ContainerFactory::create(
-            $paths,
-            $cachedConfig,
-            options: new ContainerFactoryOptions(ContainerCacheMode::RequireCache),
-        );
-
-        expect($container->get(BuildCommandCompiledTarget::class))
-            ->toBeInstanceOf(BuildCommandCompiledTarget::class)
-            ->dependency->toBeInstanceOf(BuildCommandCompiledDependency::class);
-
-        $staleShard = $cache->build(
-            CompiledFactoryShardCompiler::FILE_PREFIX . str_repeat('0', 32) . '.php',
-        );
-        file_put_contents($staleShard, '<?php return null;');
-
-        expect((new CommandTester($command))->execute([]))->toBe(0)
-            ->and($staleShard)->not->toBeFile();
-    } finally {
-        umask($originalUmask);
-        removeBuildCommandCache(CacheLayout::fromConfig($config, $paths), $root);
-    }
+    expect(Runner::run(Scope::CLI, $container))->toBe(0)
+        ->and($output->fetch())->toContain('Application build completed.');
 });
 
-it('keeps regular runtime listeners and their targeted production discovery cache', function (): void {
-    $root = str_replace(DIRECTORY_SEPARATOR, '/', sys_get_temp_dir())
-        . '/componenta_app_console_runtime_listener_' . bin2hex(random_bytes(4));
-    $paths = new BuildCommandTestPathResolver($root);
-    $environment = new Environment(['APP_ENV' => 'development']);
-    $baseConfig = ConfigLoader::load(
-        $environment,
-        new ClassFinderConfigProvider(),
-        new AppConfigProvider(),
+it('reports a builder failure through the existing console error boundary with a nonzero exit code', function (): void {
+    $failure = new DomainException('Build failed');
+    $output = new BufferedOutput();
+    $errors = $this->createMock(CliErrorHandlerInterface::class);
+    $errors->expects($this->once())->method('handle')->with(
+        $this->identicalTo($failure),
+        $this->isInstanceOf(CliErrorContextInterface::class),
     );
-    $data = $baseConfig->toArray();
-    $data[ClassFinderConfigKey::LISTENERS][] = BuildCommandRuntimeListener::class;
-    $config = new Config($data, $environment);
-    $iterator = new ClassIterator([
-        __FILE__ . '#runtime-listener-target' => new ClassInfo(stdClass::class),
-    ]);
-    $command = new BuildCommand(
-        $config,
-        $paths,
-        static fn (): ConfigFactoryResult => new ConfigFactoryResult($config, $iterator),
-    );
-
-    try {
-        expect((new CommandTester($command))->execute([]))->toBe(0);
-
-        $productionConfig = ConfigLoader::loadFromFile(
-            CacheLayout::fromConfig($config, $paths)->config,
-        );
-        expect($productionConfig->get(ClassFinderConfigKey::LISTENERS))->toBe([
-            BuildCommandRuntimeListener::class,
-        ])->and($productionConfig->get(ListenerRestorer::CACHE_KEY)['classes'])->toBe([
-            stdClass::class,
-        ]);
-    } finally {
-        removeBuildCommandCache(CacheLayout::fromConfig($config, $paths), $root);
-    }
-});
-
-it('omits empty discovery metadata and factory sections', function (): void {
-    $root = str_replace(DIRECTORY_SEPARATOR, '/', sys_get_temp_dir())
-        . '/componenta_app_console_empty_build_' . bin2hex(random_bytes(4));
-    $paths = new BuildCommandTestPathResolver($root);
-    $environment = new Environment(['APP_ENV' => 'development']);
-    $sourceConfig = new Config([], $environment);
-    $runtimeConfig = new Config([
-        ListenerRestorer::CACHE_KEY => [
-            'classes' => [stdClass::class],
-            'targets' => [],
+    $container = buildCommandTestContainer(
+        ['command' => 'app:build'],
+        $output,
+        $errors,
+        static fn (): array => [
+            AppConfigKey::BUILDERS => ['failing.builder'],
+            ConfigKey::DEPENDENCIES => [
+                ConfigKey::SERVICES => [
+                    'failing.builder' => new class($failure) implements ApplicationBuilderInterface {
+                        public function __construct(private DomainException $failure) {}
+                        public function build(): void { throw $this->failure; }
+                    },
+                ],
+            ],
         ],
-        'stale.compiled' => true,
-    ], $environment);
-    $command = new BuildCommand(
-        $runtimeConfig,
-        $paths,
-        static fn (): ConfigFactoryResult => new ConfigFactoryResult(
-            $sourceConfig,
-            new ClassIterator([]),
-        ),
     );
 
-    try {
-        expect((new CommandTester($command))->execute([]))->toBe(0);
-
-        $cache = CacheLayout::fromConfig($sourceConfig, $paths);
-        $compiledConfig = ConfigLoader::loadFromFile($cache->config)->toArray();
-        $containerCache = require $cache->container;
-
-        expect($compiledConfig)->not->toHaveKey(ListenerRestorer::CACHE_KEY)
-            ->not->toHaveKey('stale.compiled')
-            ->and($containerCache[DiConfigKey::DEPENDENCIES])
-            ->not->toHaveKey(DiConfigKey::FACTORIES);
-    } finally {
-        removeBuildCommandCache(CacheLayout::fromConfig($sourceConfig, $paths), $root);
-    }
+    expect(Runner::run(Scope::CLI, $container))->toBe(1)
+        ->and($output->fetch())->not->toContain('Application build completed.');
 });

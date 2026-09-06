@@ -39,7 +39,8 @@ final readonly class IOFactory
     public function __construct(
         private InputFactoryInterface $inputFactory = new InputFactory(),
         private OutputFactoryInterface $outputFactory = new OutputFactory(),
-    ) {}
+    ) {
+    }
 
     /**
      * Create input instance

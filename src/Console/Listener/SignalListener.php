@@ -58,7 +58,7 @@ abstract class SignalListener extends AbstractEventListener
         string $eventName = ConsoleEvents::SIGNAL,
         int $priority = 0,
     ): EventListenerInterface {
-        return new class($callback, $priority) extends SignalListener {
+        return new class ($callback, $priority) extends SignalListener {
             public function __construct(
                 private readonly Closure $callback,
                 int $priority,
@@ -118,6 +118,10 @@ abstract class SignalListener extends AbstractEventListener
     protected function handle(
         ConsoleCommandEvent|ConsoleErrorEvent|ConsoleTerminateEvent|ConsoleSignalEvent $event,
     ): void {
+        if (!$event instanceof ConsoleSignalEvent) {
+            return;
+        }
+
         $this->handleSignal($event);
     }
 

@@ -9,8 +9,8 @@ use Componenta\App\Console\ConfigKey as ConsoleConfigKey;
 use Componenta\App\Console\ConsoleCommandRegistryInterface;
 use Componenta\App\Scope;
 use Componenta\ClassFinder\ClassIteratorInterface;
-use Componenta\Scope\Scopes;
 use Componenta\Reflection\Reflection;
+use Componenta\Scope\Scopes;
 use RuntimeException;
 use Psr\Container\ContainerExceptionInterface;
 use Psr\Container\NotFoundExceptionInterface;
@@ -20,8 +20,8 @@ use Symfony\Component\Console\Command\Command;
 /**
  * Bootloader for console command registration.
  *
- * In production: loads commands from pre-compiled config file.
- * In development: discovers commands via #[AsCommand] attribute.
+ * Explicit and discovered commands follow the same registration path in every
+ * environment. Production discovery may be backed by a verified class snapshot.
  */
 final class ConsoleBootloader implements BootloaderInterface
 {
@@ -29,7 +29,8 @@ final class ConsoleBootloader implements BootloaderInterface
 
     public function __construct(
         private readonly ConsoleCommandRegistryInterface $commands,
-    ) {}
+    ) {
+    }
 
     public Scopes $scopes {
         get => Scopes::of(Scope::CLI);
@@ -47,10 +48,6 @@ final class ConsoleBootloader implements BootloaderInterface
             $command = $context->container->get($entryId, Command::class);
 
             $this->commands->register($app, $command);
-        }
-
-        if ($context->container->config->environment?->match('APP_ENV', 'production') === true) {
-            return;
         }
 
         $discovered = $this->discoveredClasses($context);
@@ -72,12 +69,28 @@ final class ConsoleBootloader implements BootloaderInterface
 
             $command = $context->container->get($class->fullyQualifiedName, Command::class);
 
+            $command->setName($asCommand->name);
+
+            if ($asCommand->description !== null) {
+                $command->setDescription($asCommand->description);
+            }
+
+            if ($asCommand->help !== null) {
+                $command->setHelp($asCommand->help);
+            }
+
+            if ($asCommand->usages !== []) {
+                foreach ($asCommand->usages as $usage) {
+                    $command->addUsage($usage);
+                }
+            }
+
             $this->commands->register($app, $command);
         }
     }
 
     /**
-     * @return list<class-string>
+     * @return list<non-empty-string>
      */
     private function configuredCommandIds(BootContext $context): array
     {
@@ -102,12 +115,11 @@ final class ConsoleBootloader implements BootloaderInterface
     }
 
     /**
-     * Dev CLI runs `Componenta\App\Discovery\Discovery` in `config/config.php`
-     * and the resulting iterator is registered as a shared service in
-     * `ContainerFactory`. If neither ran, there is nothing to attribute-
-     * scan and we skip silently.
+     * ConfigFactory registers the source iterator or verified production
+     * snapshot as a shared dependency. With no discovery definition there is
+     * nothing to attribute-scan and registration is skipped.
      */
-    private function discoveredClasses(BootContext $context): ?iterable
+    private function discoveredClasses(BootContext $context): ?ClassIteratorInterface
     {
         $c = $context->container;
 

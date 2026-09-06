@@ -18,11 +18,12 @@ final readonly class InputFactory implements InputFactoryInterface
     /**
      * Create input factory
      *
-     * @param array<string>|null $argv Command-line arguments (null for global $argv)
+     * @param list<string>|null $argv Command-line arguments (null for global $argv)
      */
     public function __construct(
         private ?array $argv = null,
-    ) {}
+    ) {
+    }
 
     /**
      * Create input instance from argv

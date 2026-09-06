@@ -10,7 +10,6 @@ use Symfony\Component\Console\Event\ConsoleTerminateEvent;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 
-
 /**
  * Profiling subscriber for command performance monitoring
  *
@@ -43,7 +42,8 @@ final class ProfilingSubscriber implements EventSubscriberInterface
      */
     public function __construct(
         private readonly int $verbosity = OutputInterface::VERBOSITY_VERBOSE,
-    ) {}
+    ) {
+    }
 
     /**
      * Get subscribed events

@@ -11,6 +11,7 @@ use FilesystemIterator;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 use RuntimeException;
+use SplFileInfo;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -91,6 +92,10 @@ final class CacheClearCommand extends Command
         );
 
         foreach ($iterator as $item) {
+            if (!$item instanceof SplFileInfo) {
+                continue;
+            }
+
             $path = $item->getPathname();
 
             if ($item->isDir()) {

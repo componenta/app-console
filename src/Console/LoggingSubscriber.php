@@ -35,7 +35,8 @@ final readonly class LoggingSubscriber implements EventSubscriberInterface
      */
     public function __construct(
         private LoggerInterface $logger,
-    ) {}
+    ) {
+    }
 
     /**
      * Get subscribed events

@@ -12,12 +12,12 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\LockInterface;
 
-
 /**
  * Locking subscriber to prevent parallel command execution
  *
  * Acquires a lock before command execution and releases it after.
  * If lock cannot be acquired (command already running), disables execution.
+ * Symfony then returns ConsoleCommandEvent::RETURN_CODE_DISABLED.
  *
  * Requires symfony/lock package.
  *
@@ -77,7 +77,8 @@ final class LockingSubscriber implements EventSubscriberInterface
     /**
      * Attempt to acquire lock before command execution
      *
-     * If lock cannot be acquired, disables command and sets failure exit code.
+     * If lock cannot be acquired, disables command with Symfony's standard
+     * disabled-command return code.
      *
      * @param ConsoleCommandEvent $event Command event
      */
@@ -86,6 +87,10 @@ final class LockingSubscriber implements EventSubscriberInterface
         $command = $event->getCommand();
 
         if (!$this->shouldLock($command)) {
+            return;
+        }
+
+        if ($command === null) {
             return;
         }
 
@@ -98,7 +103,6 @@ final class LockingSubscriber implements EventSubscriberInterface
                 $command->getName(),
             ));
             $event->disableCommand();
-            $event->setExitCode(Command::FAILURE);
         }
     }
 

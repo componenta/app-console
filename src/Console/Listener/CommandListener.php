@@ -12,7 +12,6 @@ use Symfony\Component\Console\Event\ConsoleErrorEvent;
 use Symfony\Component\Console\Event\ConsoleSignalEvent;
 use Symfony\Component\Console\Event\ConsoleTerminateEvent;
 
-
 /**
  * Abstract listener for ConsoleEvents::COMMAND
  *
@@ -53,7 +52,7 @@ abstract class CommandListener extends AbstractEventListener
         string $eventName = ConsoleEvents::COMMAND,
         int $priority = 0,
     ): EventListenerInterface {
-        return new class($callback, $priority) extends CommandListener {
+        return new class ($callback, $priority) extends CommandListener {
             public function __construct(
                 private readonly Closure $callback,
                 int $priority,
@@ -113,6 +112,10 @@ abstract class CommandListener extends AbstractEventListener
     protected function handle(
         ConsoleCommandEvent|ConsoleErrorEvent|ConsoleTerminateEvent|ConsoleSignalEvent $event,
     ): void {
+        if (!$event instanceof ConsoleCommandEvent) {
+            return;
+        }
+
         $this->handleCommand($event);
     }
 

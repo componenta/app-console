@@ -11,7 +11,8 @@ final readonly class ConsoleBootTarget implements ConsoleBootTargetInterface
 {
     public function __construct(
         private App $app,
-    ) {}
+    ) {
+    }
 
     public function add(Command $command): Command
     {

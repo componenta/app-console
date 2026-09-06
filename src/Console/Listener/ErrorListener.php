@@ -53,7 +53,7 @@ abstract class ErrorListener extends AbstractEventListener
         string $eventName = ConsoleEvents::ERROR,
         int $priority = 0,
     ): EventListenerInterface {
-        return new class($callback, $priority) extends ErrorListener {
+        return new class ($callback, $priority) extends ErrorListener {
             public function __construct(
                 private readonly Closure $callback,
                 int $priority,
@@ -113,6 +113,10 @@ abstract class ErrorListener extends AbstractEventListener
     protected function handle(
         ConsoleCommandEvent|ConsoleErrorEvent|ConsoleTerminateEvent|ConsoleSignalEvent $event,
     ): void {
+        if (!$event instanceof ConsoleErrorEvent) {
+            return;
+        }
+
         $this->handleError($event);
     }
 

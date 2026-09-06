@@ -24,7 +24,8 @@ final readonly class OutputFactory implements OutputFactoryInterface
     public function __construct(
         private int $verbosity = OutputInterface::VERBOSITY_NORMAL,
         private ?bool $decorated = null,
-    ) {}
+    ) {
+    }
 
     /**
      * Create console output instance

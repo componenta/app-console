@@ -75,10 +75,11 @@ final class ConsoleCommandRegistry implements ConsoleCommandRegistryInterface
         return isset($this->namesByClass[$class]);
     }
 
+    /** @return list<array{name: ?string, class: class-string<Command>}> */
     public function toArray(): array
     {
         return array_map(
-            static fn(Command $command): array => [
+            static fn (Command $command): array => [
                 'name' => $command->getName(),
                 'class' => $command::class,
             ],
