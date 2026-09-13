@@ -68,11 +68,11 @@ jobs:
       - name: Use validation source
         run: >-
           composer config repositories.validation
-          '{"type":"path","url":"validation-source","options":{"symlink":false,"versions":{"componenta/validation":"2.0.1"}}}'
+          '{"type":"path","url":"validation-source","options":{"symlink":false,"versions":{"componenta/validation":"3.0.0"}}}'
       - name: Use reflection 2 source
         run: >-
           composer config repositories.reflection
-          '{"type":"path","url":"reflection-source","options":{"symlink":false,"versions":{"componenta/reflection":"2.0.0"}}}'
+          '{"type":"path","url":"reflection-source","options":{"symlink":false,"versions":{"componenta/reflection":"2.0.1"}}}'
       - run: composer validate --strict
       - run: composer update --no-interaction --prefer-dist
       - run: composer test
