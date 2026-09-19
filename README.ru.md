@@ -12,7 +12,7 @@ composer require componenta/app-console
 
 ## Регистрация сервисов
 
-Провайдер добавляет `ConsoleAppAdapter` в `AppConfigKey::APP_ADAPTERS`, `ConsoleBootTargetAdapter` в `AppConfigKey::BOOT_TARGET_ADAPTERS` и `ConsoleBootloader` в `AppConfigKey::BOOTLOADERS`. Он регистрирует реестр команд, фабрику диспетчера событий и фабрику BuildCommand.
+Провайдер добавляет `ConsoleAppAdapter` в `AppConfigKey::APP_ADAPTERS`, `ConsoleBootTargetAdapter` в `AppConfigKey::BOOT_TARGET_ADAPTERS` и `ConsoleBootloader` в `AppConfigKey::BOOTLOADERS`. Он регистрирует реестр команд, фабрику диспетчера событий и фабрики BuildCommand и CleanCommand.
 
 `ConsoleBootloader` получает команды по ID из `Componenta\App\Console\ConfigKey::COMMANDS` через существующий контейнер. Если доступен `ClassIteratorInterface`, загрузчик также ищет Symfony-атрибуты `#[AsCommand]`. Явные и найденные команды проходят одинаковую регистрацию в development и production. Каждый класс регистрируется один раз; одинаковое имя у разных классов команд вызывает ошибку.
 
@@ -43,7 +43,7 @@ final class ConfigProvider extends BaseConfigProvider
 | Команда | Назначение |
 |---|---|
 | `app:build` | По порядку вызывает сервисы из `Componenta\App\ConfigKey::BUILDERS`. |
-| `app:cache:clear` | Очищает каталоги сборки, разработки и runtime из `CacheLayout`. Опции `--build`, `--dev` и `--runtime` позволяют выбрать каталоги. |
+| `app:clean` | Вызывает `clean(): void` у зарегистрированных билдеров с `ApplicationBuildCleanerInterface`. Каждый билдер удаляет свои артефакты. |
 
 Сборка запускается через обычную CLI-точку входа:
 
@@ -51,11 +51,15 @@ final class ConfigProvider extends BaseConfigProvider
 php bin/console.php app:build
 ~~~
 
-BuildCommand получает `Closure(): ApplicationBuildOrchestrator`. Фабрика создаёт замыкание над существующим контейнером; команда вызывает его только в `execute()`. Поэтому `list` и `--help` не создают билдеры и не запрашивают discovery ради сборки. Обычная подготовка приложения сохраняется.
+BuildCommand и CleanCommand получают `Closure(): ApplicationBuildOrchestrator`. Фабрика создаёт замыкание над существующим контейнером; команда вызывает его только в `execute()`. Поэтому `list` и `--help` не создают билдеры и не запрашивают discovery ради сборки. Обычная подготовка приложения сохраняется.
 
-Команда доступна в development и production, в том числе до появления артефактов. `ApplicationBuildOrchestratorFactory` проверяет все регистрации и создаёт все билдеры до начала выполнения. Отсутствующий или пустой список завершается успешно.
+При настроенном discovery `ConsoleCommandBuilder` записывает `var/cache/build/commands.php` с признаком наличия `AsCommand` для каждого класса. При использовании подготовленного discovery runtime пропускает поиск атрибута у остальных классов. Команды и атрибуты создаются нативно при запуске. Отсутствующая или некорректная карта включает исходный путь; при исходном discovery старые карты команд игнорируются. Явно зарегистрированные команды сохраняют приоритет над обнаруженными.
+
+Обе команды доступны в development и production, в том числе до появления артефактов. `ApplicationBuildOrchestratorFactory` проверяет все регистрации и создаёт все билдеры до начала выполнения. Отсутствующий или пустой список завершается успешно.
 
 Каждый билдер реализует `build(): void` и получает зависимости через конструктор. Билдер отвечает за формат артефактов, пути, каталоги и атомарные записи. Исключение останавливает последовательность и приводит к ненулевому коду завершения консоли; результаты уже завершённых билдеров сохраняются. Общие исходные данные передаются через DI.
+
+Очистка использует тот же проверенный список, пропускает билдеры без опционального интерфейса и успешно завершается при уже отсутствующих артефактах. Чужие файлы сохраняются; каталоги кешей не очищаются рекурсивно. `app:clean` заменяет `app:cache:clear`, опции выбора каталогов удалены. Обе команды проходят обычную загрузку с доступными картами. Следующий процесс после очистки запускается без этих карт.
 
 Примеры регистрации приведены в [описании API билдера App](https://github.com/componenta/app/blob/main/README.ru.md#билдеры-приложения).
 

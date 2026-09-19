@@ -6,7 +6,7 @@ use Componenta\App\Boot\ConsoleBootTargetAdapter;
 use Componenta\App\Boot\ConsoleBootloader;
 use Componenta\App\ConfigKey as AppConfigKey;
 use Componenta\App\Console\Command\BuildCommand;
-use Componenta\App\Console\Command\CacheClearCommand;
+use Componenta\App\Console\Command\CleanCommand;
 use Componenta\App\Console\ConfigKey as ConsoleConfigKey;
 use Componenta\App\Console\ConfigProvider;
 use Componenta\App\Console\ConsoleAppAdapter;
@@ -26,7 +26,7 @@ describe('console app config provider', function (): void {
 
         expect($config[ConsoleConfigKey::COMMANDS])->toBe([
             BuildCommand::class,
-            CacheClearCommand::class,
+            CleanCommand::class,
         ])
             ->and($config[DependencyConfigKey::DEPENDENCIES])->not->toHaveKey(
                 DependencyConfigKey::INVOKABLES,

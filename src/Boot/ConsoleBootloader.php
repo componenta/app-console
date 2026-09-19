@@ -27,9 +27,14 @@ final class ConsoleBootloader implements BootloaderInterface
 {
     use ScopedBootloaderSupport;
 
+    /** @var array<class-string, bool>|null */
+    private readonly ?array $commandMap;
+
     public function __construct(
         private readonly ConsoleCommandRegistryInterface $commands,
+        ?array $commandMap = null,
     ) {
+        $this->commandMap = self::validMap($commandMap) ? $commandMap : null;
     }
 
     public Scopes $scopes {
@@ -61,7 +66,11 @@ final class ConsoleBootloader implements BootloaderInterface
                 continue;
             }
 
-            $asCommand = Reflection::getFirstMetadata($class->reflector, AsCommand::class);
+            $reflection = $class->reflector;
+            if (($this->commandMap[$reflection->getName()] ?? true) === false) {
+                continue;
+            }
+            $asCommand = Reflection::getFirstMetadata($reflection, AsCommand::class);
 
             if ($asCommand === null) {
                 continue;
@@ -69,7 +78,14 @@ final class ConsoleBootloader implements BootloaderInterface
 
             $command = $context->container->get($class->fullyQualifiedName, Command::class);
 
-            $command->setName($asCommand->name);
+            $aliases = explode('|', $asCommand->name);
+            $name = array_shift($aliases);
+            if ($name === '') {
+                $command->setHidden(true);
+                $name = array_shift($aliases);
+            }
+            $command->setName($name);
+            $command->setAliases(array_values(array_unique([...$command->getAliases(), ...$aliases])));
 
             if ($asCommand->description !== null) {
                 $command->setDescription($asCommand->description);
@@ -81,7 +97,11 @@ final class ConsoleBootloader implements BootloaderInterface
 
             if ($asCommand->usages !== []) {
                 foreach ($asCommand->usages as $usage) {
-                    $command->addUsage($usage);
+                    $normalized = str_starts_with($usage, $command->getName())
+                        ? $usage : $command->getName() . ' ' . $usage;
+                    if (!in_array($normalized, $command->getUsages(), true)) {
+                        $command->addUsage($usage);
+                    }
                 }
             }
 
@@ -126,5 +146,14 @@ final class ConsoleBootloader implements BootloaderInterface
         return $c->has(ClassIteratorInterface::class)
             ? $c->get(ClassIteratorInterface::class, ClassIteratorInterface::class)
             : null;
+    }
+
+    private static function validMap(?array $map): bool
+    {
+        if ($map === null) { return false; }
+        foreach ($map as $class => $isCommand) {
+            if (!is_string($class) || $class === '' || !is_bool($isCommand)) { return false; }
+        }
+        return true;
     }
 }

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Componenta\App\Build\ApplicationBuilderInterface;
+use Componenta\App\Build\ApplicationBuildCleanerInterface;
 use Componenta\App\Config\ConfigDefinition;
 use Componenta\App\Config\ConfigFactory;
 use Componenta\App\ConfigKey as AppConfigKey;
@@ -101,14 +102,16 @@ it('does not construct builders or request their discovery source when listing c
 
     expect(Runner::run(Scope::CLI, $container))->toBe(0)
         ->and($created)->toBe(0)
-        ->and($output->fetch())->toContain('app:build');
+        ->and($output->fetch())->toContain($input['command_name'] ?? ($input['command'] === 'list' ? 'app:clean' : $input['command']));
 })->with([
     'list' => [['command' => 'list']],
     'help command' => [['command' => 'help', 'command_name' => 'app:build']],
     'help option' => [['command' => 'app:build', '--help' => true]],
+    'clean help command' => [['command' => 'help', 'command_name' => 'app:clean']],
+    'clean help option' => [['command' => 'app:clean', '--help' => true]],
 ]);
 
-it('runs app build through the normal runtime without artifacts or a second Config', function (string $environment): void {
+it('runs build or clean through the normal runtime without artifacts or a second Config', function (string $command, string $environment, string $message): void {
     $created = 0;
     $executedWith = [];
     $providerCalls = 0;
@@ -116,7 +119,7 @@ it('runs app build through the normal runtime without artifacts or a second Conf
     $errors = $this->createMock(CliErrorHandlerInterface::class);
     $errors->expects($this->never())->method('handle');
     $container = buildCommandTestContainer(
-        ['command' => 'app:build'],
+        ['command' => $command],
         $output,
         $errors,
         static function () use (&$created, &$executedWith, &$providerCalls): array {
@@ -128,13 +131,14 @@ it('runs app build through the normal runtime without artifacts or a second Conf
                     ConfigKey::FACTORIES => [
                         'test.builder' => static function (ContainerValue $container) use (&$created, &$executedWith): ApplicationBuilderInterface {
                             $created++;
-                            $action = static function () use ($container, &$executedWith): void {
-                                $executedWith[] = $container->config;
+                            $action = static function (string $operation) use ($container, &$executedWith): void {
+                                $executedWith[] = [$operation, $container->config];
                             };
 
-                            return new class($action) implements ApplicationBuilderInterface {
+                            return new class($action) implements ApplicationBuilderInterface, ApplicationBuildCleanerInterface {
                                 public function __construct(private Closure $action) {}
-                                public function build(): void { ($this->action)(); }
+                                public function build(): void { ($this->action)('app:build'); }
+                                public function clean(): void { ($this->action)('app:clean'); }
                             };
                         },
                     ],
@@ -149,29 +153,37 @@ it('runs app build through the normal runtime without artifacts or a second Conf
         ->and(Runner::run(Scope::CLI, $container))->toBe(0)
         ->and($created)->toBe(1)
         ->and($providerCalls)->toBe(1)
-        ->and($executedWith)->toBe([$container->config])
+        ->and($executedWith)->toBe([[$command, $container->config]])
         ->and($container->get(Config::class))->toBe($container->config)
         ->and($container->config->environment->get('APP_ENV'))->toBe($environment)
-        ->and($output->fetch())->toContain('Application build completed.')
+        ->and($output->fetch())->toContain($message)
         ->and(is_dir($container->get(PathResolverInterface::class)->baseDir))->toBeFalse();
-})->with(['development', 'production']);
+})->with([
+    ['app:build', 'development', 'Application build completed.'],
+    ['app:build', 'production', 'Application build completed.'],
+    ['app:clean', 'development', 'Application build artifacts cleaned.'],
+    ['app:clean', 'production', 'Application build artifacts cleaned.'],
+]);
 
-it('succeeds without any registered builders', function (): void {
+it('succeeds without any registered builders', function (string $command, string $message): void {
     $output = new BufferedOutput();
     $errors = $this->createMock(CliErrorHandlerInterface::class);
     $errors->expects($this->never())->method('handle');
     $container = buildCommandTestContainer(
-        ['command' => 'app:build'],
+        ['command' => $command],
         $output,
         $errors,
         static fn (): array => [],
     );
 
     expect(Runner::run(Scope::CLI, $container))->toBe(0)
-        ->and($output->fetch())->toContain('Application build completed.');
-});
+        ->and($output->fetch())->toContain($message);
+})->with([
+    ['app:build', 'Application build completed.'],
+    ['app:clean', 'Application build artifacts cleaned.'],
+]);
 
-it('reports a builder failure through the existing console error boundary with a nonzero exit code', function (): void {
+it('reports a builder failure through the existing console error boundary with a nonzero exit code', function (string $command): void {
     $failure = new DomainException('Build failed');
     $output = new BufferedOutput();
     $errors = $this->createMock(CliErrorHandlerInterface::class);
@@ -180,16 +192,17 @@ it('reports a builder failure through the existing console error boundary with a
         $this->isInstanceOf(CliErrorContextInterface::class),
     );
     $container = buildCommandTestContainer(
-        ['command' => 'app:build'],
+        ['command' => $command],
         $output,
         $errors,
         static fn (): array => [
             AppConfigKey::BUILDERS => ['failing.builder'],
             ConfigKey::DEPENDENCIES => [
                 ConfigKey::SERVICES => [
-                    'failing.builder' => new class($failure) implements ApplicationBuilderInterface {
+                    'failing.builder' => new class($failure) implements ApplicationBuilderInterface, ApplicationBuildCleanerInterface {
                         public function __construct(private DomainException $failure) {}
                         public function build(): void { throw $this->failure; }
+                        public function clean(): void { throw $this->failure; }
                     },
                 ],
             ],
@@ -197,5 +210,5 @@ it('reports a builder failure through the existing console error boundary with a
     );
 
     expect(Runner::run(Scope::CLI, $container))->toBe(1)
-        ->and($output->fetch())->not->toContain('Application build completed.');
-});
+        ->and($output->fetch())->not->toContain('Application build completed.', 'Application build artifacts cleaned.');
+})->with(['app:build', 'app:clean']);
