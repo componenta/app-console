@@ -56,11 +56,11 @@ jobs:
       - name: Use App 4 source
         run: >-
           composer config repositories.app
-          '{"type":"path","url":"app-source","options":{"symlink":false,"versions":{"componenta/app":"4.0.0"}}}'
+          '{"type":"path","url":"app-source","options":{"symlink":false,"versions":{"componenta/app":"5.0.0"}}}'
       - name: Use DI 5 source
         run: >-
           composer config repositories.di
-          '{"type":"path","url":"di-source","options":{"symlink":false,"versions":{"componenta/di":"5.0.0"}}}'
+          '{"type":"path","url":"di-source","options":{"symlink":false,"versions":{"componenta/di":"5.0.3"}}}'
       - name: Use Config 3 source
         run: >-
           composer config repositories.config
@@ -68,7 +68,7 @@ jobs:
       - name: Use validation source
         run: >-
           composer config repositories.validation
-          '{"type":"path","url":"validation-source","options":{"symlink":false,"versions":{"componenta/validation":"3.0.0"}}}'
+          '{"type":"path","url":"validation-source","options":{"symlink":false,"versions":{"componenta/validation":"3.0.1"}}}'
       - name: Use reflection 2 source
         run: >-
           composer config repositories.reflection
