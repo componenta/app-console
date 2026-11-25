@@ -7,6 +7,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -16,29 +20,20 @@ jobs:
         php: ['8.4', '8.5']
     steps:
       - uses: actions/checkout@v7
-
       - uses: actions/checkout@v7
         with:
           repository: componenta/app
           ref: ${{ (github.head_ref == 'refactor/app-runtime-contracts' || github.ref_name == 'refactor/app-runtime-contracts') && 'refactor/app-runtime-contracts' || 'main' }}
           path: app-source
-
       - uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
           coverage: none
           tools: composer:v2
-
       - name: Use App 6 source
         run: >-
           composer config repositories.app
-          '{"type":"path","url":"app-source","options":{"symlink":false,"versions":{"componenta/app":"6.0.0"}}}'      - name: Use Config 3 source
-        run: >-
-          composer config repositories.config
-          '{"type":"path","url":"config-source","options":{"symlink":false,"versions":{"componenta/config":"3.0.0"}}}'      - name: Use reflection 2 source
-        run: >-
-          composer config repositories.reflection
-          '{"type":"path","url":"reflection-source","options":{"symlink":false,"versions":{"componenta/reflection":"2.0.1"}}}'
+          '{"type":"path","url":"app-source","options":{"symlink":false,"versions":{"componenta/app":"6.0.0"}}}'
       - run: composer validate --strict
       - run: composer update --no-interaction --prefer-dist
       - run: composer test
