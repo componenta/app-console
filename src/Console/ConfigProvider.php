@@ -21,7 +21,7 @@ use Componenta\Config\ConfigProvider as BaseConfigProvider;
 
 final class ConfigProvider extends BaseConfigProvider implements DiscoveryAwareConfigProviderInterface
 {
-    public private(set) ?ClassIteratorInterface $discovered = null;
+    private ?ClassIteratorInterface $discovered = null;
 
     public function withDiscovered(?ClassIteratorInterface $discovered): static
     {

@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           repository: componenta/app
-          ref: main
+          ref: ${{ (github.head_ref == 'refactor/app-runtime-contracts' || github.ref_name == 'refactor/app-runtime-contracts') && 'refactor/app-runtime-contracts' || 'main' }}
           path: app-source
 
       - uses: actions/checkout@v7
@@ -53,10 +53,10 @@ jobs:
           coverage: none
           tools: composer:v2
 
-      - name: Use App 4 source
+      - name: Use App 6 source
         run: >-
           composer config repositories.app
-          '{"type":"path","url":"app-source","options":{"symlink":false,"versions":{"componenta/app":"5.0.0"}}}'
+          '{"type":"path","url":"app-source","options":{"symlink":false,"versions":{"componenta/app":"6.0.0"}}}'
       - name: Use DI 5 source
         run: >-
           composer config repositories.di
