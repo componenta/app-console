@@ -16,8 +16,11 @@ final class ConsoleBootloaderFactory
     public function __invoke(ContainerValue $container): ConsoleBootloader
     {
         $map = null;
-        if ($container->has(AppConfigKey::DISCOVERY_PREPARED) && $container->get(AppConfigKey::DISCOVERY_PREPARED) === true) {
-            $map = PhpMapFile::read($container->get(PathResolverInterface::class, PathResolverInterface::class)->resolve(ConfigKey::COMMAND_MAP_FILE));
+        if ($container->has(AppConfigKey::DISCOVERY_GENERATION)) {
+            $map = PhpMapFile::read(
+                $container->get(PathResolverInterface::class, PathResolverInterface::class)->resolve(ConfigKey::COMMAND_MAP_FILE),
+                $container->get(AppConfigKey::DISCOVERY_GENERATION),
+            );
         }
         return new ConsoleBootloader($container->get(ConsoleCommandRegistryInterface::class, ConsoleCommandRegistryInterface::class), $map);
     }

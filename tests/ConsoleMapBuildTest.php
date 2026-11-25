@@ -72,9 +72,20 @@ it('builds console discovery lazily and preserves command metadata and execution
             ->and(MappedConsoleExample::$constructions)->toBe(0)
             ->and(is_file($root . '/var/cache/build/commands.php'))->toBeTrue();
         expect($run($load()))->toBe($expected)->and($run($load()))->toBe($expected);
+        $mapFile = $root . '/var/cache/build/commands.php';
+        $currentMap = require $mapFile;
+        $staleMap = array_replace($currentMap, [
+            'generation' => str_repeat('f', 32),
+            'payload' => ['MappedConsoleExample' => false],
+        ]);
+        file_put_contents($mapFile, '<?php return ' . var_export($staleMap, true) . ';');
+        expect($run($load()))->toBe($expected);
+        // An unversioned map must not suppress a current discovered command.
+        file_put_contents($mapFile, '<?php return ["MappedConsoleExample" => false];');
+        expect($run($load()))->toBe($expected);
         foreach ([
             '<?php return false;',
-            '<?php return ["MappedConsoleExample" => "no"];',
+            '<?php return ' . var_export(array_replace($currentMap, ['payload' => ['MappedConsoleExample' => 'no']]), true) . ';',
             '<?php return [;',
             '<?php throw new LogicException("Invalid map");',
         ] as $invalidMap) {

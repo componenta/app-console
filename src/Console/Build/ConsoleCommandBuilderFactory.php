@@ -17,6 +17,7 @@ final class ConsoleCommandBuilderFactory
         return new ConsoleCommandBuilder(
             $container->get(AppConfigKey::DISCOVERY_SOURCE, ClassIteratorInterface::class),
             $container->get(PathResolverInterface::class, PathResolverInterface::class)->resolve(ConfigKey::COMMAND_MAP_FILE),
+            $container->get(AppConfigKey::BUILD_GENERATION),
         );
     }
 }

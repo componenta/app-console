@@ -12,7 +12,11 @@ use Symfony\Component\Console\Attribute\AsCommand;
 
 final readonly class ConsoleCommandBuilder implements ApplicationBuilderInterface, ApplicationBuildCleanerInterface
 {
-    public function __construct(private ClassIteratorInterface $classes, private string $file) {}
+    public function __construct(
+        private ClassIteratorInterface $classes,
+        private string $file,
+        private ?string $generation = null,
+    ) {}
 
     public function clean(): void
     {
@@ -25,6 +29,6 @@ final readonly class ConsoleCommandBuilder implements ApplicationBuilderInterfac
         foreach ($this->classes as $class) {
             $map[$class->fullyQualifiedName] = $class->reflector->getAttributes(AsCommand::class) !== [];
         }
-        PhpMapFile::write($this->file, $map);
+        PhpMapFile::write($this->file, $map, $this->generation);
     }
 }

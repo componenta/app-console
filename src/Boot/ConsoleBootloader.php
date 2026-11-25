@@ -66,10 +66,10 @@ final class ConsoleBootloader implements BootloaderInterface
                 continue;
             }
 
-            $reflection = $class->reflector;
-            if (($this->commandMap[$reflection->getName()] ?? true) === false) {
+            if (($this->commandMap[$class->fullyQualifiedName] ?? true) === false) {
                 continue;
             }
+            $reflection = $class->reflector;
             $asCommand = Reflection::getFirstMetadata($reflection, AsCommand::class);
 
             if ($asCommand === null) {
