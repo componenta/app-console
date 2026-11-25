@@ -53,7 +53,7 @@ php bin/console.php app:build
 
 BuildCommand and CleanCommand each receive a `Closure(): ApplicationBuildOrchestrator`. Each factory closes over the existing container; the closure is called only in `execute()`. `list` and `--help` therefore do not instantiate builders or request discovery for the build. Ordinary application preparation still takes place.
 
-With discovery configured, `ConsoleCommandBuilder` writes `var/cache/build/commands.php`, recording whether each class carries `AsCommand`. The runtime uses it with prepared discovery to skip attribute searches for other classes. Command creation and attribute instantiation retain their native runtime behavior. Missing or malformed maps fall back to discovery; source discovery ignores older command maps. Configured commands retain precedence over discovered commands.
+With discovery configured, `ConsoleCommandBuilder` writes `var/cache/build/commands.php`, recording whether each class carries `AsCommand`. The runtime uses it with prepared discovery to skip attribute searches for other classes. Command creation and attribute instantiation retain their native runtime behavior. Missing, malformed, unversioned or mismatched-generation maps fall back to discovery; source discovery ignores command maps. Configured commands retain precedence over discovered commands.
 
 Both commands are available in development and production, including before build artifacts exist. `ApplicationBuildOrchestratorFactory` validates all registrations and resolves all builders before execution. An absent or empty builder list succeeds.
 
