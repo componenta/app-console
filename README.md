@@ -1,6 +1,6 @@
 # Componenta App Console
 
-Symfony Console integration for Componenta applications: a CLI application adapter, boot target, command registry and maintenance commands.
+Symfony Console integration for Componenta applications: a CLI application, boot target, command registry and maintenance commands.
 
 ## Installation
 
@@ -12,7 +12,7 @@ The package requires PHP 8.4 or later and exposes `Componenta\App\Console\Config
 
 ## Registered services
 
-The provider adds `ConsoleAppAdapter` to `AppConfigKey::APP_ADAPTERS`, `ConsoleBootTargetAdapter` to `AppConfigKey::BOOT_TARGET_ADAPTERS`, and `ConsoleBootloader` to `AppConfigKey::BOOTLOADERS`. It registers the command registry, event-dispatcher factory and the BuildCommand and CleanCommand factories.
+The provider registers the CLI application service in `AppConfigKey::APPLICATIONS`, `ConsoleBootTargetAdapter` in `AppConfigKey::BOOT_TARGET_ADAPTERS`, and `ConsoleBootloader` in `AppConfigKey::BOOTLOADERS`. It registers the command registry, event-dispatcher factory and the BuildCommand and CleanCommand factories.
 
 `ConsoleBootloader` resolves command IDs from `Componenta\App\Console\ConfigKey::COMMANDS` through the existing container. When a `ClassIteratorInterface` is available, it also discovers Symfony `#[AsCommand]` attributes. Configured and discovered commands follow the same registration path in development and production. A class is registered once; different command classes sharing a name cause an error.
 

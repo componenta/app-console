@@ -1,6 +1,6 @@
 # Componenta App Console
 
-Интеграция Symfony Console с Componenta: адаптер CLI-приложения, целевой объект загрузки, реестр команд и команды обслуживания.
+Интеграция Symfony Console с Componenta: CLI-приложение, целевой объект загрузки, реестр команд и команды обслуживания.
 
 ## Установка
 
@@ -12,7 +12,7 @@ composer require componenta/app-console
 
 ## Регистрация сервисов
 
-Провайдер добавляет `ConsoleAppAdapter` в `AppConfigKey::APP_ADAPTERS`, `ConsoleBootTargetAdapter` в `AppConfigKey::BOOT_TARGET_ADAPTERS` и `ConsoleBootloader` в `AppConfigKey::BOOTLOADERS`. Он регистрирует реестр команд, фабрику диспетчера событий и фабрики BuildCommand и CleanCommand.
+Провайдер регистрирует сервис CLI-приложения в `AppConfigKey::APPLICATIONS`, `ConsoleBootTargetAdapter` в `AppConfigKey::BOOT_TARGET_ADAPTERS` и `ConsoleBootloader` в `AppConfigKey::BOOTLOADERS`. Он регистрирует реестр команд, фабрику диспетчера событий и фабрики BuildCommand и CleanCommand.
 
 `ConsoleBootloader` получает команды по ID из `Componenta\App\Console\ConfigKey::COMMANDS` через существующий контейнер. Если доступен `ClassIteratorInterface`, загрузчик также ищет Symfony-атрибуты `#[AsCommand]`. Явные и найденные команды проходят одинаковую регистрацию в development и production. Каждый класс регистрируется один раз; одинаковое имя у разных классов команд вызывает ошибку.
 

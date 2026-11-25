@@ -12,6 +12,7 @@ use Componenta\App\Console\Build\ConsoleCommandBuilderFactory;
 use Componenta\ClassFinder\ClassIteratorInterface;
 use Componenta\App\Boot\ConsoleBootTargetAdapter;
 use Componenta\App\ConfigKey as AppConfigKey;
+use Componenta\App\Scope;
 use Componenta\App\Console\Command\BuildCommand;
 use Componenta\App\Console\Command\BuildCommandFactory;
 use Componenta\App\Console\Command\CleanCommand;
@@ -33,7 +34,7 @@ final class ConfigProvider extends BaseConfigProvider implements DiscoveryAwareC
     {
         return [
             AppConfigKey::BUILDERS => $this->discovered !== null ? [ConsoleCommandBuilder::class] : [],
-            AppConfigKey::APP_ADAPTERS => [ConsoleAppAdapter::class],
+            AppConfigKey::APPLICATIONS => [Scope::CLI->value => App::class],
             AppConfigKey::BOOT_TARGET_ADAPTERS => [ConsoleBootTargetAdapter::class],
             AppConfigKey::BOOTLOADERS => [ConsoleBootloader::class],
             ConfigKey::COMMANDS => [BuildCommand::class, CleanCommand::class],
