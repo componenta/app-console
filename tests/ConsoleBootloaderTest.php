@@ -107,3 +107,30 @@ it('registers configured and discovered commands with the same semantics in ever
         'test:discovered',
     ]);
 })->with(['development', 'production']);
+
+it('captures command membership independently of caller-owned references', function (bool $included, bool $replacement, array $expected): void {
+    $map = [ConsoleBootloaderDiscoveredCommand::class => &$included];
+    $bootloader = new ConsoleBootloader(new ConsoleCommandRegistry(), $map);
+    $included = $replacement;
+    $target = new ConsoleBootloaderTestTarget();
+    $container = new ConsoleBootloaderTestContainer([
+        ConsoleBootloaderDiscoveredCommand::class => new ConsoleBootloaderDiscoveredCommand(),
+        ClassIteratorInterface::class => new ClassIterator([
+            __FILE__ => new ClassInfo(ConsoleBootloaderDiscoveredCommand::class),
+        ]),
+    ]);
+
+    $bootloader->boot(new BootContext(
+        new ContainerValue($container, new Config([], new Environment([]))),
+        Scope::CLI,
+        $target,
+    ));
+
+    expect(array_map(
+        static fn (Command $command): ?string => $command->getName(),
+        $target->commands,
+    ))->toBe($expected);
+})->with([
+    'included remains included' => [true, false, ['test:discovered']],
+    'excluded remains excluded' => [false, true, []],
+]);

@@ -34,7 +34,10 @@ final class ConsoleBootloader implements BootloaderInterface
         private readonly ConsoleCommandRegistryInterface $commands,
         ?array $commandMap = null,
     ) {
-        $this->commandMap = self::validMap($commandMap) ? $commandMap : null;
+        // Keep validated metadata independent of caller-owned reference slots.
+        $this->commandMap = self::validMap($commandMap)
+            ? array_map(static fn (bool $isCommand): bool => $isCommand, $commandMap)
+            : null;
     }
 
     public Scopes $scopes {

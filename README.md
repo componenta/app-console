@@ -67,6 +67,8 @@ Use the full command names `app:build` and `app:clean` for deployment. `BuildCon
 
 `ConsoleCommandBuilder::build(BuildContext $build)` writes the versioned `console.commands` artifact. It records attribute membership only. At runtime, the bootloader reads the `PreparedBuild` selected at bootstrap through `AppConfigKey::PREPARED_BUILD`; command construction, attribute instantiation, aliases and configured-command precedence remain unchanged. Missing or invalid optional maps use the original reflection path. An empty map is a valid prepared result.
 
+Custom hosts that pass a command map directly to `ConsoleBootloader` get the same snapshot semantics: changing caller-owned references after construction cannot change the accepted command membership.
+
 Builders receive their source dependencies through constructors and write through the context passed to `build()`. Publication belongs to App. A failing builder produces a nonzero exit status and leaves the previous generation selected. Unsupported optional optimizations are reported with their source-fallback reason. An empty builder list publishes a valid empty generation.
 
 `BuildCommand` now accepts `Closure(): PreparedBuild`; `CleanCommand` accepts `Closure(): void`. The old per-builder cleaner interface, output filename arguments and `ConfigKey::COMMAND_MAP_FILE` have been removed. `ApplicationBuildRunner::clean($paths)` needs only the path resolver; the environment argument has been removed. Clean only removes `current.json`; it is repeatable and works even if application configuration or dotenv is broken. Remove retained generations only during offline release cleanup after old workers have stopped.
