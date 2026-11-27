@@ -69,7 +69,7 @@ Use the full command names `app:build` and `app:clean` for deployment. `BuildCon
 
 Builders receive their source dependencies through constructors and write through the context passed to `build()`. Publication belongs to App. A failing builder produces a nonzero exit status and leaves the previous generation selected. Unsupported optional optimizations are reported with their source-fallback reason. An empty builder list publishes a valid empty generation.
 
-`BuildCommand` now accepts `Closure(): PreparedBuild`; `CleanCommand` accepts `Closure(): void`. The old per-builder cleaner interface, output filename arguments and `ConfigKey::COMMAND_MAP_FILE` have been removed. Clean only removes `current.json`; it is repeatable and works even if application configuration is broken. Remove retained generations only during offline release cleanup after old workers have stopped.
+`BuildCommand` now accepts `Closure(): PreparedBuild`; `CleanCommand` accepts `Closure(): void`. The old per-builder cleaner interface, output filename arguments and `ConfigKey::COMMAND_MAP_FILE` have been removed. `ApplicationBuildRunner::clean($paths)` needs only the path resolver; the environment argument has been removed. Clean only removes `current.json`; it is repeatable and works even if application configuration or dotenv is broken. Remove retained generations only during offline release cleanup after old workers have stopped.
 
 `APP_ENV` does not select or require prepared mode. Use the same `APP_BUILD_ID` for build and runtime to bind artifacts to an immutable release/profile. Rebuild after structural source/configuration changes, then restart workers. See the App README for explicit required-artifact deployment policies and artifact schemas.
 

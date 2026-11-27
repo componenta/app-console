@@ -13,10 +13,9 @@ final class CleanCommandFactory
     public function __invoke(ContainerValue $container): CleanCommand
     {
         $paths = $container->get(PathResolverInterface::class, PathResolverInterface::class);
-        $environment = $container->config->environment;
 
-        return new CleanCommand(static function () use ($paths, $environment): void {
-            ApplicationBuildRunner::clean($paths, $environment);
+        return new CleanCommand(static function () use ($paths): void {
+            ApplicationBuildRunner::clean($paths);
         });
     }
 }

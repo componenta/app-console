@@ -134,6 +134,7 @@ it('unpublishes without evaluating configuration and preserves a pinned generati
         expect(BuildConsole::run($paths, new ArrayInput(['command' => 'app:build']), $output))->toBe(0);
         $prepared = (new BuildStore($root . '/var/cache/build'))->load();
         file_put_contents($root . '/config/config.php', '<?php throw new LogicException("Clean must not bootstrap providers.");');
+        file_put_contents($root . '/.env', 'THIS IS NOT A VALID ENVIRONMENT ASSIGNMENT');
         foreach (range(1, 2) as $_) {
             expect(BuildConsole::run($paths, new ArrayInput(['command' => 'app:clean']), $output))->toBe(0);
         }
