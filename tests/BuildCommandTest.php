@@ -2,213 +2,165 @@
 
 declare(strict_types=1);
 
-use Componenta\App\Build\ApplicationBuilderInterface;
-use Componenta\App\Build\ApplicationBuildCleanerInterface;
-use Componenta\App\Config\ConfigDefinition;
-use Componenta\App\Config\ConfigFactory;
-use Componenta\App\ConfigKey as AppConfigKey;
-use Componenta\App\ConfigProvider as AppConfigProvider;
-use Componenta\App\Console\ConfigProvider as ConsoleConfigProvider;
-use Componenta\App\Console\InputFactoryInterface;
-use Componenta\App\Console\IOFactory;
-use Componenta\App\Console\OutputFactoryInterface;
-use Componenta\App\Runner;
-use Componenta\App\Scope;
-use Componenta\Config\Config;
-use Componenta\Config\ConfigKey;
-use Componenta\Config\ContainerValue;
-use Componenta\Config\Environment;
-use Componenta\DI\ContainerFactory;
-use Componenta\Error\Context\CliErrorContextInterface;
-use Componenta\Error\Handler\CliErrorHandlerInterface;
+use Componenta\App\Build\BuildStore;
+use Componenta\App\Console\Build\BuildConsole;
 use Componenta\Stdlib\PathResolver;
-use Componenta\Stdlib\PathResolverInterface;
 use Symfony\Component\Console\Input\ArrayInput;
-use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\BufferedOutput;
-use Symfony\Component\Console\Output\OutputInterface;
 
-/**
- * @param array<string, mixed> $input
- * @param callable(): array<array-key, mixed> $provider
- */
-function buildCommandTestContainer(
-    array $input,
-    BufferedOutput $output,
-    CliErrorHandlerInterface $errors,
-    callable $provider,
-    string $environment = 'production',
-): ContainerValue {
-    $io = new IOFactory(
-        new class($input) implements InputFactoryInterface {
-            public function __construct(private array $input) {}
-            public function createInput(): InputInterface
-            {
-                $input = new ArrayInput($this->input);
-                $input->setInteractive(false);
+function buildConsoleFixture(): string
+{
+    $root = sys_get_temp_dir() . '/componenta_build_console_' . bin2hex(random_bytes(8));
+    mkdir($root . '/config', 0700, true);
+    file_put_contents($root . '/config/config.php', <<<'PHP'
+        <?php
+        use Componenta\App\Build\ApplicationBuilderInterface;
+        use Componenta\App\Build\BuildContext;
+        use Componenta\App\Config\ConfigDefinition;
+        use Componenta\App\ConfigKey;
 
-                return $input;
-            }
-        },
-        new class($output) implements OutputFactoryInterface {
-            public function __construct(private BufferedOutput $output) {}
-            public function createOutput(): OutputInterface { return $this->output; }
-        },
-    );
-    $paths = new PathResolver(sys_get_temp_dir() . '/componenta_build_' . bin2hex(random_bytes(8)));
-    $result = ConfigFactory::create(
-        paths: $paths,
-        definition: new ConfigDefinition(providers: [
-            new AppConfigProvider(),
-            new ConsoleConfigProvider(),
-            $provider,
-            static fn (): array => [
-                ConfigKey::DEPENDENCIES => [
-                    ConfigKey::SERVICES => [
-                        IOFactory::class => $io,
-                        CliErrorHandlerInterface::class => $errors,
-                    ],
-                ],
-            ],
-        ]),
-        environment: new Environment(['APP_ENV' => $environment]),
-    );
-
-    return (new ContainerFactory())->create($result->composition->config, $result->composition->dependencies);
-}
-
-it('does not construct builders or request their discovery source when listing commands or showing help', function (array $input): void {
-    $created = 0;
-    $output = new BufferedOutput();
-    $errors = $this->createMock(CliErrorHandlerInterface::class);
-    $errors->expects($this->never())->method('handle');
-    $container = buildCommandTestContainer($input, $output, $errors, static function () use (&$created): array {
-        return [
-            AppConfigKey::BUILDERS => ['test.builder'],
-            ConfigKey::DEPENDENCIES => [
-                ConfigKey::FACTORIES => [
-                    'test.builder' => static function (ContainerValue $container) use (&$created): mixed {
-                        $created++;
-
-                        return $container->get('build.discovery.source');
-                    },
-                    'build.discovery.source' => static function (): never {
-                        throw new LogicException('Build discovery must remain deferred.');
-                    },
-                ],
-            ],
-        ];
-    });
-
-    expect(Runner::run(Scope::CLI, $container))->toBe(0)
-        ->and($created)->toBe(0)
-        ->and($output->fetch())->toContain($input['command_name'] ?? ($input['command'] === 'list' ? 'app:clean' : $input['command']));
-})->with([
-    'list' => [['command' => 'list']],
-    'help command' => [['command' => 'help', 'command_name' => 'app:build']],
-    'help option' => [['command' => 'app:build', '--help' => true]],
-    'clean help command' => [['command' => 'help', 'command_name' => 'app:clean']],
-    'clean help option' => [['command' => 'app:clean', '--help' => true]],
-]);
-
-it('runs build or clean through the normal runtime without artifacts or a second Config', function (string $command, string $environment, string $message): void {
-    $created = 0;
-    $executedWith = [];
-    $providerCalls = 0;
-    $output = new BufferedOutput();
-    $errors = $this->createMock(CliErrorHandlerInterface::class);
-    $errors->expects($this->never())->method('handle');
-    $container = buildCommandTestContainer(
-        ['command' => $command],
-        $output,
-        $errors,
-        static function () use (&$created, &$executedWith, &$providerCalls): array {
-            $providerCalls++;
-
-            return [
-                AppConfigKey::BUILDERS => ['test.builder'],
+        file_put_contents($paths->resolve('providers-invoked.txt'), 'invoked', FILE_APPEND);
+        return new ConfigDefinition(providers: [
+            new \Componenta\App\ConfigProvider(),
+            static fn () => [
+                ConfigKey::BUILDERS => ['fixture.builder'],
+                ConfigKey::BOOTLOADERS => ['missing.runtime.bootloader'],
                 ConfigKey::DEPENDENCIES => [
                     ConfigKey::FACTORIES => [
-                        'test.builder' => static function (ContainerValue $container) use (&$created, &$executedWith): ApplicationBuilderInterface {
-                            $created++;
-                            $action = static function (string $operation) use ($container, &$executedWith): void {
-                                $executedWith[] = [$operation, $container->config];
-                            };
-
-                            return new class($action) implements ApplicationBuilderInterface, ApplicationBuildCleanerInterface {
-                                public function __construct(private Closure $action) {}
-                                public function build(): void { ($this->action)('app:build'); }
-                                public function clean(): void { ($this->action)('app:clean'); }
-                            };
+                        'fixture.builder' => static fn () => new class($paths->baseDir) implements ApplicationBuilderInterface {
+                            public function __construct(private string $root) {}
+                            public function build(BuildContext $build): void
+                            {
+                                if (is_file($this->root . '/fail.txt')) {
+                                    throw new DomainException('Fixture compiler failed.');
+                                }
+                                $build->write('fixture.data', ['value' => file_exists($this->root . '/next.txt') ? 'next' : 'first']);
+                                $build->skip('fixture.optional', 'Dynamic definition requires source.');
+                            }
                         },
                     ],
                 ],
-            ];
-        },
-        $environment,
-    );
-
-    expect($created)->toBe(0)
-        ->and(is_dir($container->get(PathResolverInterface::class)->baseDir))->toBeFalse()
-        ->and(Runner::run(Scope::CLI, $container))->toBe(0)
-        ->and($created)->toBe(1)
-        ->and($providerCalls)->toBe(1)
-        ->and($executedWith)->toBe([[$command, $container->config]])
-        ->and($container->get(Config::class))->toBe($container->config)
-        ->and($container->config->environment->get('APP_ENV'))->toBe($environment)
-        ->and($output->fetch())->toContain($message)
-        ->and(is_dir($container->get(PathResolverInterface::class)->baseDir))->toBeFalse();
-})->with([
-    ['app:build', 'development', 'Application build completed.'],
-    ['app:build', 'production', 'Application build completed.'],
-    ['app:clean', 'development', 'Application build artifacts cleaned.'],
-    ['app:clean', 'production', 'Application build artifacts cleaned.'],
-]);
-
-it('succeeds without any registered builders', function (string $command, string $message): void {
-    $output = new BufferedOutput();
-    $errors = $this->createMock(CliErrorHandlerInterface::class);
-    $errors->expects($this->never())->method('handle');
-    $container = buildCommandTestContainer(
-        ['command' => $command],
-        $output,
-        $errors,
-        static fn (): array => [],
-    );
-
-    expect(Runner::run(Scope::CLI, $container))->toBe(0)
-        ->and($output->fetch())->toContain($message);
-})->with([
-    ['app:build', 'Application build completed.'],
-    ['app:clean', 'Application build artifacts cleaned.'],
-]);
-
-it('reports a builder failure through the existing console error boundary with a nonzero exit code', function (string $command): void {
-    $failure = new DomainException('Build failed');
-    $output = new BufferedOutput();
-    $errors = $this->createMock(CliErrorHandlerInterface::class);
-    $errors->expects($this->once())->method('handle')->with(
-        $this->identicalTo($failure),
-        $this->isInstanceOf(CliErrorContextInterface::class),
-    );
-    $container = buildCommandTestContainer(
-        ['command' => $command],
-        $output,
-        $errors,
-        static fn (): array => [
-            AppConfigKey::BUILDERS => ['failing.builder'],
-            ConfigKey::DEPENDENCIES => [
-                ConfigKey::SERVICES => [
-                    'failing.builder' => new class($failure) implements ApplicationBuilderInterface, ApplicationBuildCleanerInterface {
-                        public function __construct(private DomainException $failure) {}
-                        public function build(): void { throw $this->failure; }
-                        public function clean(): void { throw $this->failure; }
-                    },
-                ],
             ],
-        ],
-    );
+        ]);
+        PHP);
 
-    expect(Runner::run(Scope::CLI, $container))->toBe(1)
-        ->and($output->fetch())->not->toContain('Application build completed.', 'Application build artifacts cleaned.');
-})->with(['app:build', 'app:clean']);
+    return $root;
+}
+
+function removeBuildConsoleFixture(string $root): void
+{
+    $entries = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::CHILD_FIRST,
+    );
+    foreach ($entries as $entry) {
+        $entry->isDir() ? rmdir($entry->getPathname()) : unlink($entry->getPathname());
+    }
+    rmdir($root);
+}
+
+it('dispatches ordinary commands without loading build configuration', function (): void {
+    $root = buildConsoleFixture();
+    try {
+        expect(BuildConsole::run(new PathResolver($root), new ArrayInput(['command' => 'list'])))->toBeNull()
+            ->and(file_exists($root . '/providers-invoked.txt'))->toBeFalse();
+    } finally {
+        removeBuildConsoleFixture($root);
+    }
+});
+
+it('shows build help and version without invoking configuration or creating artifacts', function (array $arguments): void {
+    $root = buildConsoleFixture();
+    try {
+        $output = new BufferedOutput();
+        expect(BuildConsole::run(new PathResolver($root), new ArrayInput($arguments), $output))->toBe(0)
+            ->and(file_exists($root . '/providers-invoked.txt'))->toBeFalse()
+            ->and(is_dir($root . '/var'))->toBeFalse();
+    } finally {
+        removeBuildConsoleFixture($root);
+    }
+})->with([
+    [['command' => 'app:build', '--help' => true]],
+    [['command' => 'app:build', '--version' => true]],
+    [['command' => 'app:clean', '--help' => true]],
+    [['command' => 'app:clean', '--version' => true]],
+]);
+
+it('builds from fresh source without booting the runtime and reports unsupported optional artifacts', function (): void {
+    $root = buildConsoleFixture();
+    try {
+        $output = new BufferedOutput();
+        $paths = new PathResolver($root);
+        expect(BuildConsole::run($paths, new ArrayInput(['command' => 'app:build']), $output))->toBe(0);
+        $first = (new BuildStore($root . '/var/cache/build'))->load();
+        expect($first?->read('fixture.data'))->toBe(['value' => 'first'])
+            ->and(file_get_contents($root . '/providers-invoked.txt'))->toBe('invoked')
+            ->and($output->fetch())->toContain('fixture.optional', 'Dynamic definition', 'Application build completed.');
+
+        touch($root . '/next.txt');
+        expect(BuildConsole::run($paths, new ArrayInput(['command' => 'app:build']), $output))->toBe(0);
+        $second = (new BuildStore($root . '/var/cache/build'))->load();
+        expect($second?->generation)->not->toBe($first->generation)
+            ->and($second?->read('fixture.data'))->toBe(['value' => 'next'])
+            ->and($first->read('fixture.data'))->toBe(['value' => 'first']);
+    } finally {
+        removeBuildConsoleFixture($root);
+    }
+});
+
+it('keeps the previous generation when a builder fails and returns a nonzero status', function (): void {
+    $root = buildConsoleFixture();
+    try {
+        $paths = new PathResolver($root);
+        $output = new BufferedOutput();
+        expect(BuildConsole::run($paths, new ArrayInput(['command' => 'app:build']), $output))->toBe(0);
+        $before = (new BuildStore($root . '/var/cache/build'))->load();
+        $output->fetch();
+        touch($root . '/fail.txt');
+
+        expect(BuildConsole::run($paths, new ArrayInput(['command' => 'app:build']), $output))->not->toBe(0)
+            ->and($output->fetch())->toContain('Fixture compiler failed.')
+            ->and((new BuildStore($root . '/var/cache/build'))->load()?->generation)->toBe($before->generation);
+    } finally {
+        removeBuildConsoleFixture($root);
+    }
+});
+
+it('unpublishes without evaluating configuration and preserves a pinned generation', function (): void {
+    $root = buildConsoleFixture();
+    try {
+        $paths = new PathResolver($root);
+        $output = new BufferedOutput();
+        expect(BuildConsole::run($paths, new ArrayInput(['command' => 'app:build']), $output))->toBe(0);
+        $prepared = (new BuildStore($root . '/var/cache/build'))->load();
+        file_put_contents($root . '/config/config.php', '<?php throw new LogicException("Clean must not bootstrap providers.");');
+        foreach (range(1, 2) as $_) {
+            expect(BuildConsole::run($paths, new ArrayInput(['command' => 'app:clean']), $output))->toBe(0);
+        }
+        expect((new BuildStore($root . '/var/cache/build'))->load())->toBeNull()
+            ->and($prepared->read('fixture.data'))->toBe(['value' => 'first']);
+    } finally {
+        removeBuildConsoleFixture($root);
+    }
+});
+
+it('preserves an explicitly supplied environment when a custom console host invokes the build factory', function (): void {
+    $root = buildConsoleFixture();
+    try {
+        $paths = new PathResolver($root);
+        $environment = new \Componenta\Config\Environment(['APP_BUILD_ID' => 'custom-console-release']);
+        $composition = \Componenta\App\Config\ConfigFactory::create(
+            $paths,
+            static fn () => require $paths->resolve('config/config.php'),
+            $environment,
+        );
+        $container = (new \Componenta\DI\ContainerFactory())->create($composition->config, $composition->dependencies);
+        $command = (new \Componenta\App\Console\Command\BuildCommandFactory())($container);
+        $tester = new \Symfony\Component\Console\Tester\CommandTester($command);
+
+        expect($tester->execute([]))->toBe(0)
+            ->and((new BuildStore($root . '/var/cache/build', 'custom-console-release'))->load()?->read('fixture.data'))->toBe(['value' => 'first']);
+    } finally {
+        removeBuildConsoleFixture($root);
+    }
+});

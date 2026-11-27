@@ -5,6 +5,9 @@ declare(strict_types=1);
 use Componenta\App\Boot\BootContext;
 use Componenta\App\Boot\ConsoleBootloader;
 use Componenta\App\Boot\Target\ConsoleBootTargetInterface;
+use Componenta\App\Build\ApplicationBuildRunner;
+use Componenta\App\Build\BuildStore;
+use Componenta\App\Console\Build\ConsoleCommandBuilder;
 use Componenta\App\Config\ConfigDefinition;
 use Componenta\App\Config\ConfigFactory;
 use Componenta\App\Config\DiscoveryDefinition;
@@ -40,7 +43,15 @@ final class MappedConsoleExample extends Command
 it('builds console discovery lazily and preserves command metadata and execution through real DI', function (): void {
     $root = sys_get_temp_dir() . '/componenta_console_map_' . bin2hex(random_bytes(8));
     mkdir($root . '/src', 0700, true);
+    mkdir($root . '/config', 0700, true);
     file_put_contents($root . '/src/Example.php', '<?php final class MappedConsoleExample {}');
+    file_put_contents($root . '/config/config.php', <<<'PHP'
+        <?php
+        return new \Componenta\App\Config\ConfigDefinition(
+            providers: [new \Componenta\App\ConfigProvider(), new \Componenta\App\Console\ConfigProvider()],
+            discovery: new \Componenta\App\Config\DiscoveryDefinition(['src']),
+        );
+        PHP);
     $load = static function () use ($root) {
         $result = ConfigFactory::create(new PathResolver($root), new ConfigDefinition(
             providers: [new \Componenta\App\ConfigProvider(), new \Componenta\App\Console\ConfigProvider()],
@@ -70,9 +81,10 @@ it('builds console discovery lazily and preserves command metadata and execution
         expect(MappedConsoleExample::$constructions)->toBe(0);
         expect($build->execute([]))->toBe(0)
             ->and(MappedConsoleExample::$constructions)->toBe(0)
-            ->and(is_file($root . '/var/cache/build/commands.php'))->toBeTrue();
+            ->and((new BuildStore($root . '/var/cache/build'))->load()?->read(ConsoleCommandBuilder::ARTIFACT))->toBe(['MappedConsoleExample' => true]);
         expect($run($load()))->toBe($expected)->and($run($load()))->toBe($expected);
-        $mapFile = $root . '/var/cache/build/commands.php';
+        $prepared = (new BuildStore($root . '/var/cache/build'))->load();
+        $mapFile = $root . '/var/cache/build/generations/' . $prepared->generation . '/console.commands.php';
         $currentMap = require $mapFile;
         $staleMap = array_replace($currentMap, [
             'generation' => str_repeat('f', 32),
@@ -89,11 +101,11 @@ it('builds console discovery lazily and preserves command metadata and execution
             '<?php return [;',
             '<?php throw new LogicException("Invalid map");',
         ] as $invalidMap) {
-            file_put_contents($root . '/var/cache/build/commands.php', $invalidMap);
+            file_put_contents($mapFile, $invalidMap);
             expect($run($load()))->toBe($expected);
         }
-        file_put_contents($root . '/var/cache/build/commands.php', '<?php return ["MappedConsoleExample" => false];');
-        unlink($root . '/var/cache/build/classes.php');
+        file_put_contents($mapFile, '<?php return ["MappedConsoleExample" => false];');
+        (new BuildStore($root . '/var/cache/build'))->clean();
         expect($run($load()))->toBe($expected);
         expect((new CommandTester($load()->get(BuildCommand::class)))->execute([]))->toBe(0);
         expect($run($load()))->toBe($expected);

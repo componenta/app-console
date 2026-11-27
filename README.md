@@ -8,7 +8,7 @@ Symfony Console integration for Componenta applications: a CLI application, boot
 composer require componenta/app-console
 ~~~
 
-The package requires PHP 8.4 or later and exposes `Componenta\App\Console\ConfigProvider` through Composer metadata. `componenta/composer-plugin` adds it to the generated provider list.
+The package requires PHP 8.5.13 or later and exposes `Componenta\App\Console\ConfigProvider` through Composer metadata. `componenta/composer-plugin` adds it to the generated provider list.
 
 ## Registered services
 
@@ -42,26 +42,36 @@ The same array can be returned by a file provider included in the application's 
 
 | Command | Purpose |
 |---|---|
-| `app:build` | Runs services registered in `Componenta\App\ConfigKey::BUILDERS` in order. |
-| `app:clean` | Calls `clean(): void` on registered builders implementing `ApplicationBuildCleanerInterface`. Each builder removes its own artifacts. |
+| `app:build` | Compose current source configuration, run registered builders and publish one generation. |
+| `app:clean` | Unpublish the current generation without loading providers or deleting files pinned by running workers. |
 
-Run the build through the ordinary CLI entry point:
+Dispatch these commands **before** ordinary application bootstrap. The standard Skeleton entry point does this:
 
-~~~bash
-php bin/console.php app:build
+~~~php
+use Componenta\App\Console\Build\BuildConsole;
+use Componenta\App\Scope;
+use Componenta\Stdlib\PathResolver;
+use function Componenta\App\run;
+
+$paths = new PathResolver(dirname(__DIR__));
+$buildCode = BuildConsole::run($paths);
+if ($buildCode !== null) {
+    exit($buildCode);
+}
+run(Scope::CLI, $paths);
 ~~~
 
-BuildCommand and CleanCommand each receive a `Closure(): ApplicationBuildOrchestrator`. Each factory closes over the existing container; the closure is called only in `execute()`. `list` and `--help` therefore do not instantiate builders or request discovery for the build. Ordinary application preparation still takes place.
+Use the full command names `app:build` and `app:clean` for deployment. `BuildConsole` handles their options, help and version without booting the ordinary application. It returns `null` for other commands. BuildCommand/CleanCommand remain registered for normal command listings and custom console hosts. Their factories use the default `config/config.php`; applications with a different configuration entry point can supply their own command closures or call `ApplicationBuildRunner` directly. Calling a build command after ordinary bootstrap cannot undo bootloader side effects that have already occurred.
 
-With discovery configured, `ConsoleCommandBuilder` writes `var/cache/build/commands.php`, recording whether each class carries `AsCommand`. The runtime uses it with prepared discovery to skip attribute searches for other classes. Command creation and attribute instantiation retain their native runtime behavior. Missing, malformed, unversioned or mismatched-generation maps fall back to discovery; source discovery ignores command maps. Configured commands retain precedence over discovered commands.
+`ApplicationBuildRunner` selects source before configuration providers are invoked and creates a fresh container. It never runs runtime bootloaders. Newly added `#[AsConfig]` providers and removed source declarations are reflected in the **first** rebuild, without a preceding clean. Providers still execute at build time to define the build; the complete Config object and live services are not serialized. Structural inputs used by domain maps must stay consistent with the release/profile identity.
 
-Both commands are available in development and production, including before build artifacts exist. `ApplicationBuildOrchestratorFactory` validates all registrations and resolves all builders before execution. An absent or empty builder list succeeds.
+`ConsoleCommandBuilder::build(BuildContext $build)` writes the versioned `console.commands` artifact. It records attribute membership only. At runtime, the bootloader reads the `PreparedBuild` selected at bootstrap through `AppConfigKey::PREPARED_BUILD`; command construction, attribute instantiation, aliases and configured-command precedence remain unchanged. Missing or invalid optional maps use the original reflection path. An empty map is a valid prepared result.
 
-Every builder implements `build(): void` and receives its dependencies through its constructor. The builder owns the artifact format, paths, directories and atomic writes. Exceptions stop the sequence and produce a nonzero console exit status; already completed effects remain. Shared original data is provided through DI.
+Builders receive their source dependencies through constructors and write through the context passed to `build()`. Publication belongs to App. A failing builder produces a nonzero exit status and leaves the previous generation selected. Unsupported optional optimizations are reported with their source-fallback reason. An empty builder list publishes a valid empty generation.
 
-Cleanup uses the same validated builder list, skips builders without the optional interface, and succeeds when artifacts are already absent. It preserves unrelated files and does not recursively clear cache directories. `app:clean` replaces `app:cache:clear`; directory selection options are removed. Both commands use normal bootstrap with available maps. The next process after cleanup starts without those maps.
+`BuildCommand` now accepts `Closure(): PreparedBuild`; `CleanCommand` accepts `Closure(): void`. The old per-builder cleaner interface, output filename arguments and `ConfigKey::COMMAND_MAP_FILE` have been removed. Clean only removes `current.json`; it is repeatable and works even if application configuration is broken. Remove retained generations only during offline release cleanup after old workers have stopped.
 
-See the [App builder API](https://github.com/componenta/app/blob/main/README.md#application-builders) for registration examples.
+`APP_ENV` does not select or require prepared mode. Use the same `APP_BUILD_ID` for build and runtime to bind artifacts to an immutable release/profile. Rebuild after structural source/configuration changes, then restart workers. See the App README for explicit required-artifact deployment policies and artifact schemas.
 
 ## Public API
 

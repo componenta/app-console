@@ -6,6 +6,7 @@ namespace Componenta\App\Console;
 
 use Componenta\App\AppInterface;
 use Componenta\Error\Context\CliContext;
+use Componenta\Error\ErrorOccurrenceFactory;
 use Componenta\Error\Handler\CliErrorHandlerInterface;
 use Symfony\Component\Console\Application;
 use Symfony\Component\Console\Command\Command;
@@ -48,6 +49,7 @@ final class App implements AppInterface, EventListenerProviderInterface
         public private(set) readonly CliErrorHandlerInterface   $errorHandler,
         string                                           $name = 'Componenta',
         string                                           $version = '1.0.0',
+        private readonly ErrorOccurrenceFactory          $errorFactory = new ErrorOccurrenceFactory(),
     ) {
         $this->console = new Application($name, $version);
         $this->console->setAutoExit(false);
@@ -78,7 +80,7 @@ final class App implements AppInterface, EventListenerProviderInterface
         try {
             return $this->console->run($input, $output);
         } catch (\Throwable $e) {
-            $this->errorHandler->handle($e, new CliContext($input, $output));
+            $this->errorHandler->handle($this->errorFactory->create($e), new CliContext($input, $output));
 
             return 1;
         }

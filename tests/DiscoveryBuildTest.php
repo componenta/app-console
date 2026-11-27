@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Componenta\App\Config\AsConfig;
 use Componenta\App\Config\ConfigFactory;
+use Componenta\App\Build\BuildStore;
 use Componenta\App\Console\Command\BuildCommand;
 use Componenta\Config\Environment;
 use Componenta\DI\ContainerFactory;
@@ -76,7 +77,7 @@ it('builds discovery without changing providers and uses the prepared iterator f
         $container = (new ContainerFactory())->create($before->config, $before->dependencies);
         $command = new CommandTester($container->get(BuildCommand::class));
         expect($command->execute([]))->toBe(0);
-        expect(PreparedConfigurationProviderFixture::$calls)->toBe(1);
+        expect(PreparedConfigurationProviderFixture::$calls)->toBe(2);
 
         $builtSource = file_get_contents($configFile);
         expect($builtSource)->toBe($source);
@@ -84,7 +85,7 @@ it('builds discovery without changing providers and uses the prepared iterator f
         $after = $load();
         expect($after->config->get('order'))->toBe(['attribute', 'attribute-second', 'file-one', 'between', 'file-two'])
             ->and($after->config->get('current'))->toBe('runtime')
-            ->and(PreparedConfigurationProviderFixture::$calls)->toBe(2);
+            ->and(PreparedConfigurationProviderFixture::$calls)->toBe(3);
 
         $rebuild = (new ContainerFactory())->create($after->config, $after->dependencies);
         expect((new CommandTester($rebuild->get(BuildCommand::class)))->execute([]))->toBe(0)
@@ -93,10 +94,11 @@ it('builds discovery without changing providers and uses the prepared iterator f
 
         file_put_contents($root . '/src/Provider.php', '<?php final class PreparedConfigurationProviderFixture {} final class AddedConfigurationProviderFixture {}');
         expect($load()->config->get('order'))->toBe(['attribute', 'attribute-second', 'file-one', 'between', 'file-two']);
-        unlink($root . '/var/cache/build/classes.php');
+        // No manual clean: the first rebuild must discover newly added providers.
+        expect((new CommandTester($rebuild->get(BuildCommand::class)))->execute([]))->toBe(0);
         $development = $load();
         expect($development->config->get('order'))->toBe(['attribute', 'attribute-second', 'added', 'file-one', 'between', 'file-two'])
-            ->and(is_file($root . '/var/cache/build/classes.php'))->toBeFalse();
+            ->and((new BuildStore($root . '/var/cache/build'))->load())->not->toBeNull();
 
         $rebuild = (new ContainerFactory())->create($development->config, $development->dependencies);
         expect((new CommandTester($rebuild->get(BuildCommand::class)))->execute([]))->toBe(0)

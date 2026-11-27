@@ -5,30 +5,22 @@ declare(strict_types=1);
 namespace Componenta\App\Console\Build;
 
 use Componenta\App\Build\ApplicationBuilderInterface;
-use Componenta\App\Build\ApplicationBuildCleanerInterface;
-use Componenta\App\Build\PhpMapFile;
+use Componenta\App\Build\BuildContext;
 use Componenta\ClassFinder\ClassIteratorInterface;
 use Symfony\Component\Console\Attribute\AsCommand;
 
-final readonly class ConsoleCommandBuilder implements ApplicationBuilderInterface, ApplicationBuildCleanerInterface
+final readonly class ConsoleCommandBuilder implements ApplicationBuilderInterface
 {
-    public function __construct(
-        private ClassIteratorInterface $classes,
-        private string $file,
-        private ?string $generation = null,
-    ) {}
+    public const string ARTIFACT = 'console.commands';
 
-    public function clean(): void
-    {
-        PhpMapFile::remove($this->file);
-    }
+    public function __construct(private ClassIteratorInterface $classes) {}
 
-    public function build(): void
+    public function build(BuildContext $build): void
     {
         $map = [];
         foreach ($this->classes as $class) {
             $map[$class->fullyQualifiedName] = $class->reflector->getAttributes(AsCommand::class) !== [];
         }
-        PhpMapFile::write($this->file, $map, $this->generation);
+        $build->write(self::ARTIFACT, $map);
     }
 }

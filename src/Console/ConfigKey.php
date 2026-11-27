@@ -16,5 +16,4 @@ final class ConfigKey
      * @var string
      */
     public const string COMMANDS = 'console.commands';
-    public const string COMMAND_MAP_FILE = 'var/cache/build/commands.php';
 }

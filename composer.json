@@ -4,15 +4,15 @@
     "type": "library",
     "license": "MIT",
     "require": {
-        "php": "^8.4",
-        "componenta/app": "^6.0.0",
+        "php": "^8.5.13",
+        "componenta/app": "^6.0",
         "componenta/arrayable": "^1.0",
-        "componenta/class-finder": "^2.1.0",
-        "componenta/config": "^3.0.0",
-        "componenta/di": "^5.0.3",
-        "componenta/error-handler": "^1.0.3",
+        "componenta/class-finder": "^2.2",
+        "componenta/config": "^4.0",
+        "componenta/di": "^6.0",
+        "componenta/error-handler": "^2.0",
         "componenta/path-resolver": "^1.0",
-        "componenta/reflection": "^2.0.1",
+        "componenta/reflection": "^3.0",
         "componenta/scope": "^1.0",
         "psr/container": "^2.0",
         "psr/log": "^3.0",
@@ -36,7 +36,8 @@
     "extra": {
         "branch-alias": {
             "dev-main": "6.0.x-dev",
-            "dev-refactor/app-runtime-contracts": "6.0.x-dev"
+            "dev-refactor/app-runtime-contracts": "6.0.x-dev",
+            "dev-refactor/unified-application-build-2026-11-27": "6.0.x-dev"
         },
         "componenta": {
             "config-providers": [
